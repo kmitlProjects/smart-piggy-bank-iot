@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Piggy Bank Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Smart Piggy Bank</h1>
+    <p id="status">Waiting for data...</p>
+
+    <section class="grid">
+      <div>1 baht: <strong id="c1">0</strong></div>
+      <div>2 baht: <strong id="c2">0</strong></div>
+      <div>5 baht: <strong id="c5">0</strong></div>
+      <div>10 baht: <strong id="c10">0</strong></div>
+    </section>
+
+    <p>Total: <strong id="total">0</strong></p>
+    <p>Estimated total: <strong id="estTotal">-</strong> baht</p>
+    <p>Estimated coins: <strong id="estCoins">-</strong></p>
+    <p>Fill: <strong id="fillPercent">-</strong>%</p>
+    <p>Distance: <strong id="distance">-</strong> cm</p>
+    <p>Full: <strong id="full">false</strong></p>
+    <p>Lock: <strong id="locked">true</strong></p>
+    <p>WiFi: <strong id="wifi">false</strong></p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

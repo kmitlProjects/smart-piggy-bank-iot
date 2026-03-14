@@ -1,0 +1,165 @@
+from machine import Pin
+import time
+
+from coins import CoinCounter
+from display import init_display, render_status, show_boot_screen
+from lock import init_lock
+from rfid import init_rfid, read_card_uid
+from wifi import connect_wifi, is_connected, ip_address
+from dashboard import DashboardClient, build_payload
+
+try:
+    from ultrasonic import UltrasonicSensor, is_full, estimate_coin_level
+    HAS_ULTRASONIC = True
+except ImportError:
+    HAS_ULTRASONIC = False
+
+
+# Optional network config.
+WIFI_SSID = ""
+WIFI_PASSWORD = ""
+DASHBOARD_URL = ""
+
+# Timing config.
+UNLOCK_TIME_MS = 5000
+RFID_COOLDOWN_MS = 1200
+DISPLAY_INTERVAL_MS = 500
+ULTRASONIC_INTERVAL_MS = 800
+DASHBOARD_UPDATE_MS = 5000
+COIN_NOISE_GUARD_MS = 300
+BIN_EMPTY_DISTANCE_CM = 20.0
+BIN_FULL_DISTANCE_CM = 5.0
+BIN_MAX_COINS_EST = 400
+AVG_COIN_VALUE_EST = 4.5
+
+# Indicators.
+LED_PIN = 18
+BUZZER_PIN = 17
+
+
+def pulse_output(pin, ms=40):
+    pin.on()
+    time.sleep_ms(ms)
+    pin.off()
+
+
+def run():
+    led = Pin(LED_PIN, Pin.OUT)
+    buzzer = Pin(BUZZER_PIN, Pin.OUT)
+
+    lock = init_lock()  # GPIO35 relay, active-low unlock via lock.py
+    is_locked = True
+
+    coins = CoinCounter()
+    reader = init_rfid()
+    oled = init_display()
+    show_boot_screen(oled)
+
+    sensor = None
+    distance_cm = None
+    full_flag = False
+    estimated_coin_count = None
+    estimated_total = None
+    fill_percent = None
+    if HAS_ULTRASONIC:
+        try:
+            sensor = UltrasonicSensor()
+            print("Ultrasonic: enabled")
+        except Exception as exc:
+            print("Ultrasonic init failed:", exc)
+            sensor = None
+
+    wlan = None
+    if WIFI_SSID and WIFI_PASSWORD:
+        wlan = connect_wifi(WIFI_SSID, WIFI_PASSWORD)
+        print("WiFi connected:", is_connected(wlan), "IP:", ip_address(wlan))
+    else:
+        print("WiFi: skipped (set WIFI_SSID/WIFI_PASSWORD in main.py)")
+
+    dashboard = DashboardClient(DASHBOARD_URL, interval_ms=DASHBOARD_UPDATE_MS)
+
+    unlock_started_ms = None
+    last_card_ms = 0
+    last_display_ms = 0
+    last_ultrasonic_ms = 0
+
+    print("System Ready")
+    render_status(oled, coins.snapshot(), coins.total(), full_flag)
+
+    while True:
+        now = time.ticks_ms()
+
+        uid = read_card_uid(reader)
+        if uid is not None and time.ticks_diff(now, last_card_ms) >= RFID_COOLDOWN_MS:
+            last_card_ms = now
+            coins.suppress_for(COIN_NOISE_GUARD_MS)
+            lock.unlock()
+            is_locked = False
+            unlock_started_ms = now
+            print("Card accepted UID=", uid, "-> unlock")
+            pulse_output(led)
+            pulse_output(buzzer)
+
+        if not is_locked and unlock_started_ms is not None:
+            if time.ticks_diff(now, unlock_started_ms) >= UNLOCK_TIME_MS:
+                coins.suppress_for(COIN_NOISE_GUARD_MS)
+                lock.lock()
+                is_locked = True
+                unlock_started_ms = None
+                print("Auto lock")
+
+        new_events = coins.consume_new_events()
+        if new_events > 0:
+            counts = coins.snapshot()
+            total = coins.total()
+            print("Coins:", counts, "total:", total)
+            pulse_output(led)
+            pulse_output(buzzer)
+
+        if sensor is not None and time.ticks_diff(now, last_ultrasonic_ms) >= ULTRASONIC_INTERVAL_MS:
+            last_ultrasonic_ms = now
+            distance_cm = sensor.measure_distance_cm(samples=2)
+            full_flag = is_full(distance_cm)
+            estimate = estimate_coin_level(
+                distance_cm,
+                max_coins=BIN_MAX_COINS_EST,
+                avg_coin_value=AVG_COIN_VALUE_EST,
+                empty_cm=BIN_EMPTY_DISTANCE_CM,
+                full_cm=BIN_FULL_DISTANCE_CM,
+            )
+            estimated_coin_count = estimate["estimated_coin_count"]
+            estimated_total = estimate["estimated_total"]
+            fill_percent = estimate["fill_percent"]
+
+        if time.ticks_diff(now, last_display_ms) >= DISPLAY_INTERVAL_MS:
+            last_display_ms = now
+            render_status(
+                oled,
+                coins.snapshot(),
+                coins.total(),
+                full_flag,
+                estimated_total=estimated_total,
+                fill_percent=fill_percent,
+            )
+
+        payload = build_payload(
+            total=coins.total(),
+            counts=coins.snapshot(),
+            distance_cm=distance_cm,
+            is_full_flag=full_flag,
+            is_locked=is_locked,
+            wifi_ok=is_connected(wlan),
+            estimated_coin_count=estimated_coin_count,
+            estimated_total=estimated_total,
+            fill_percent=fill_percent,
+        )
+        sent = dashboard.send_if_due(payload, now)
+        if sent is True:
+            print("Dashboard: sent")
+        elif sent is False:
+            print("Dashboard: failed/skipped")
+
+        time.sleep_ms(20)
+
+
+run()
