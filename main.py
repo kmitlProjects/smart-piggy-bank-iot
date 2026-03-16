@@ -23,6 +23,7 @@ DASHBOARD_URL = ""
 # Timing config.
 UNLOCK_TIME_MS = 5000
 RFID_COOLDOWN_MS = 1200
+RFID_POLL_INTERVAL_MS = 150  # poll RFID every 150ms; avoids hammering SPI bus
 DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
 DASHBOARD_UPDATE_MS = 5000
@@ -80,6 +81,7 @@ def run():
 
     unlock_started_ms = None
     last_card_ms = 0
+    last_rfid_ms = 0
     last_display_ms = 0
     last_ultrasonic_ms = 0
 
@@ -89,24 +91,31 @@ def run():
     while True:
         now = time.ticks_ms()
 
-        uid = read_card_uid(reader)
-        if uid is not None and time.ticks_diff(now, last_card_ms) >= RFID_COOLDOWN_MS:
-            last_card_ms = now
-            coins.suppress_for(COIN_NOISE_GUARD_MS)
-            lock.unlock()
-            is_locked = False
-            unlock_started_ms = now
-            print("Card accepted UID=", uid, "-> unlock")
-            pulse_output(led)
-            pulse_output(buzzer)
+        if time.ticks_diff(now, last_rfid_ms) >= RFID_POLL_INTERVAL_MS:
+            last_rfid_ms = now
+            try:
+                uid = read_card_uid(reader)
+                if uid is not None and time.ticks_diff(now, last_card_ms) >= RFID_COOLDOWN_MS:
+                    last_card_ms = now
+                    coins.suppress_for(COIN_NOISE_GUARD_MS)
+                    lock.unlock()
+                    is_locked = False
+                    unlock_started_ms = now
+                    print("[UNLOCK] Card UID:", uid)
+                    pulse_output(led)
+                    pulse_output(buzzer)
+            except Exception as exc:
+                print("[RFID ERROR]:", exc)
 
         if not is_locked and unlock_started_ms is not None:
-            if time.ticks_diff(now, unlock_started_ms) >= UNLOCK_TIME_MS:
+            elapsed = time.ticks_diff(now, unlock_started_ms)
+            if elapsed >= UNLOCK_TIME_MS:
                 coins.suppress_for(COIN_NOISE_GUARD_MS)
                 lock.lock()
                 is_locked = True
                 unlock_started_ms = None
-                print("Auto lock")
+                print("[AUTO LOCK] After", elapsed, "ms")
+                pulse_output(led)
 
         new_events = coins.consume_new_events()
         if new_events > 0:

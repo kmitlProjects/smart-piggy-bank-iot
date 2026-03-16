@@ -1,0 +1,31 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ESP32: Upload Project Files",
+      "type": "shell",
+      "command": "set -e; echo '[ESP32] Upload started'; PORT_CU=$(./.venv/bin/mpremote connect list | awk '/Espressif Device/{print $1; exit}'); if [ -z \"$PORT_CU\" ]; then echo 'ESP32 not found. Reconnect USB.'; exit 1; fi; PORT_TTY=$(echo \"$PORT_CU\" | sed 's#/cu\\.#/tty.#'); USE_PORT=''; for P in \"$PORT_CU\" \"$PORT_TTY\"; do for i in 1 2 3 4 5 6 7 8 9 10; do if ./.venv/bin/mpremote connect \"$P\" fs ls >/dev/null 2>&1; then USE_PORT=\"$P\"; break 2; fi; echo \"Port $P busy, retry $i/10...\"; sleep 1; done; done; if [ -z \"$USE_PORT\" ]; then echo 'Port still busy. Close all REPL/serial windows first.'; lsof \"$PORT_CU\" || true; lsof \"$PORT_TTY\" || true; exit 1; fi; echo \"Using $USE_PORT\"; ./.venv/bin/mpremote connect \"$USE_PORT\" fs mkdir lib >/dev/null 2>&1 || true; ./.venv/bin/mpremote connect \"$USE_PORT\" fs cp main.py :/main.py fs cp coins.py :/coins.py fs cp rfid.py :/rfid.py fs cp lock.py :/lock.py fs cp display.py :/display.py fs cp wifi.py :/wifi.py fs cp dashboard.py :/dashboard.py fs cp ultrasonic.py :/ultrasonic.py fs cp lib/mfrc522.py :/lib/mfrc522.py fs cp lib/ssd1306.py :/lib/ssd1306.py fs ls; echo '[ESP32] Upload complete'",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ESP32: Upload and Run (Soft Reset)",
+      "type": "shell",
+      "command": "set -e; echo '[ESP32] Upload+Run started'; PORT_CU=$(./.venv/bin/mpremote connect list | awk '/Espressif Device/{print $1; exit}'); if [ -z \"$PORT_CU\" ]; then echo 'ESP32 not found. Reconnect USB.'; exit 1; fi; PORT_TTY=$(echo \"$PORT_CU\" | sed 's#/cu\\.#/tty.#'); USE_PORT=''; for P in \"$PORT_CU\" \"$PORT_TTY\"; do for i in 1 2 3 4 5 6 7 8 9 10; do if ./.venv/bin/mpremote connect \"$P\" fs ls >/dev/null 2>&1; then USE_PORT=\"$P\"; break 2; fi; echo \"Port $P busy, retry $i/10...\"; sleep 1; done; done; if [ -z \"$USE_PORT\" ]; then echo 'Port still busy. Close all REPL/serial windows first.'; lsof \"$PORT_CU\" || true; lsof \"$PORT_TTY\" || true; exit 1; fi; echo \"Using $USE_PORT\"; ./.venv/bin/mpremote connect \"$USE_PORT\" fs mkdir lib >/dev/null 2>&1 || true; ./.venv/bin/mpremote connect \"$USE_PORT\" fs cp main.py :/main.py fs cp coins.py :/coins.py fs cp rfid.py :/rfid.py fs cp lock.py :/lock.py fs cp display.py :/display.py fs cp wifi.py :/wifi.py fs cp dashboard.py :/dashboard.py fs cp ultrasonic.py :/ultrasonic.py fs cp lib/mfrc522.py :/lib/mfrc522.py fs cp lib/ssd1306.py :/lib/ssd1306.py soft-reset; echo '[ESP32] Upload+Run complete'",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}
