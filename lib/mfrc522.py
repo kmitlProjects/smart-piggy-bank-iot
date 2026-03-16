@@ -185,6 +185,11 @@ class MFRC522:
     def auth(self, mode, addr, sect, serial):
         return self._tocard(0x0E, [mode, addr] + sect + serial[:4])[0]
 
+    def halt(self):
+        buf = [0x50, 0x00]
+        buf += self._crc(buf)
+        self._tocard(0x0C, buf)
+
     def stop_crypto1(self):
         self._cflags(0x08, 0x08)
 

@@ -57,4 +57,7 @@ def read_card_uid(reader):
     if status != reader.OK:
         return None
 
+    reader.select_tag(uid)
+    reader.halt()
+    reader.stop_crypto1()
     return uid
