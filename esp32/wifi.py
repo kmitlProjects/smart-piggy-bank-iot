@@ -6,17 +6,19 @@ def connect_wifi(ssid, password, timeout_s=15):
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
 
-    if wlan.isconnected():
-        return wlan
+    print("Connecting to:", ssid)
 
     wlan.connect(ssid, password)
     start = time.ticks_ms()
 
     while not wlan.isconnected():
+        print("Waiting...")
         if time.ticks_diff(time.ticks_ms(), start) > timeout_s * 1000:
+            print("Timeout!")
             break
-        time.sleep_ms(250)
+        time.sleep_ms(500)
 
+    print("Result:", wlan.ifconfig())
     return wlan
 
 
