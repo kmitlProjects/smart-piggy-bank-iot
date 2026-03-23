@@ -1,12 +1,13 @@
 from machine import Pin
 import time
+import _thread
 
 from coins import CoinCounter
 from display import init_display, render_status, show_boot_screen
 from lock import init_lock
 from rfid import init_rfid, read_card_uid
 from wifi import connect_wifi, is_connected, ip_address
-from dashboard import DashboardClient, build_payload
+from mqtt_handler import MQTTHandler
 
 try:
     from ultrasonic import UltrasonicSensor, is_full, estimate_coin_level
@@ -16,9 +17,13 @@ except ImportError:
 
 
 # Optional network config.
-WIFI_SSID = ""
-WIFI_PASSWORD = ""
-DASHBOARD_URL = ""
+WIFI_SSID = "Galaxy A52 5GD9C0"
+WIFI_PASSWORD = "neae4850"
+
+# MQTT Config (HiveMQ Cloud)
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_TOPIC_PUBLISH = "piggybank/data"
+MQTT_TOPIC_SUBSCRIBE = "piggybank/command"
 
 # Timing config.
 UNLOCK_TIME_MS = 5000
@@ -54,6 +59,22 @@ def run():
     coins = CoinCounter()
     reader = init_rfid()
     oled = init_display()
+
+    # ===== WEB STATUS FUNCTION =====
+    def get_status():
+        return {
+            "coins": coins.snapshot(),
+            "total": coins.total(),
+            "distance_cm": distance_cm,
+            "is_full": full_flag,
+            "is_locked": is_locked,
+            "wifi_connected": is_connected(wlan),
+            "estimated_total": estimated_total,
+            "estimated_coin_count": estimated_coin_count,
+            "fill_percent": fill_percent,
+        }
+
+
     show_boot_screen(oled)
 
     sensor = None
@@ -74,19 +95,32 @@ def run():
     if WIFI_SSID and WIFI_PASSWORD:
         wlan = connect_wifi(WIFI_SSID, WIFI_PASSWORD)
         print("WiFi connected:", is_connected(wlan), "IP:", ip_address(wlan))
+        # start server
+        _thread.start_new_thread(start_server, (get_status,))
     else:
         print("WiFi: skipped (set WIFI_SSID/WIFI_PASSWORD in main.py)")
 
-    dashboard = DashboardClient(DASHBOARD_URL, interval_ms=DASHBOARD_UPDATE_MS)
+    # Initialize MQTT
+    mqtt = MQTTHandler(
+        broker=MQTT_BROKER,
+        topic_publish=MQTT_TOPIC_PUBLISH,
+        topic_subscribe=MQTT_TOPIC_SUBSCRIBE,
+        client_id="piggybank_esp32"
+    )
+    mqtt.connect()
+
 
     unlock_started_ms = None
     last_card_ms = 0
     last_rfid_ms = 0
     last_display_ms = 0
     last_ultrasonic_ms = 0
+    last_mqtt_publish_ms = 0
 
     print("System Ready")
     render_status(oled, coins.snapshot(), coins.total(), full_flag)
+    
+
 
     while True:
         now = time.ticks_ms()
@@ -151,22 +185,25 @@ def run():
                 fill_percent=fill_percent,
             )
 
-        payload = build_payload(
-            total=coins.total(),
-            counts=coins.snapshot(),
-            distance_cm=distance_cm,
-            is_full_flag=full_flag,
-            is_locked=is_locked,
-            wifi_ok=is_connected(wlan),
-            estimated_coin_count=estimated_coin_count,
-            estimated_total=estimated_total,
-            fill_percent=fill_percent,
-        )
-        sent = dashboard.send_if_due(payload, now)
-        if sent is True:
-            print("Dashboard: sent")
-        elif sent is False:
-            print("Dashboard: failed/skipped")
+        # Publish to MQTT every DASHBOARD_UPDATE_MS
+        if time.ticks_diff(now, last_mqtt_publish_ms) >= DASHBOARD_UPDATE_MS:
+            last_mqtt_publish_ms = now
+            payload = {
+                "coins": coins.snapshot(),
+                "total": coins.total(),
+                "distance_cm": distance_cm,
+                "is_full": full_flag,
+                "is_locked": is_locked,
+                "wifi_connected": is_connected(wlan),
+                "estimated_total": estimated_total,
+                "estimated_coin_count": estimated_coin_count,
+                "fill_percent": fill_percent,
+            }
+            sent = mqtt.publish(payload)
+            if sent:
+                print("MQTT: published")
+            else:
+                print("MQTT: publish failed")
 
         time.sleep_ms(20)
 

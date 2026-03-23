@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Piggy Bank — Vault Analytics</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Chart.js for statistics -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --primary-800: #005C55;
+      --primary-600: #0F766E;
+      --primary-400: #14B8A6;
+      --primary-300: #5EEAD4;
+      --primary-200: #9CF2E8;
+      --primary-100: #A3FAEF;
+      --primary-50: #F0FDFA;
+
+      --neutral-900: #181C1F;
+      --neutral-700: #3E4947;
+      --neutral-600: #475569;
+      --neutral-500: #64748B;
+      --neutral-400: #94A3B8;
+      --neutral-200: #E0E3E7;
+      --neutral-100: #EBEEF2;
+      --neutral-50: #F1F4F8;
+      --neutral-0: #FFFFFF;
+      --page-bg: #F7FAFE;
+      --sidebar-bg: #F8FAFC;
+
+      --shadow-sm: 0px 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-card: 0px 20px 40px rgba(0, 92, 85, 0.04);
+      --shadow-hero: 0px 20px 25px -5px rgba(0, 0, 0, 0.1), 0px 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+      --font-display: 'Manrope', sans-serif;
+      --font-body: 'Inter', sans-serif;
+
+      --radius-md: 12px;
+      --radius-xl: 24px;
+      --radius-full: 9999px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--page-bg);
+      color: var(--neutral-900);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { text-decoration: none; }
+    button { cursor: pointer; border: none; font-family: inherit; }
+    input { font-family: inherit; border: none; }
+
+    .app-layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 256px;
+      height: 100vh;
+      background: var(--sidebar-bg);
+      box-shadow: 0px 20px 25px -5px rgba(19, 78, 74, 0.05);
+      padding: 32px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      overflow-y: auto;
+      z-index: 1000;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid rgba(189, 201, 198, 0.1);
+    }
+
+    .logo-svg {
+      width: 167px;
+      height: 55px;
+      display: block;
+      object-fit: contain;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .nav-link {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      color: var(--neutral-700);
+      font-weight: 500;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      display: block;
+      cursor: pointer;
+    }
+
+    .nav-link:hover {
+      background: rgba(0, 92, 85, 0.08);
+      color: var(--primary-800);
+    }
+
+    .nav-link.active {
+      background: var(--primary-50);
+      color: var(--primary-800);
+      font-weight: 600;
+    }
+
+    /* Main Content */
+    .main-content {
+      margin-left: 256px;
+      padding: 80px 40px 40px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    /* Page Transitions */
+    .page {
+      display: none;
+      animation: slideIn 0.3s ease;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Hero Card */
+    .hero-card {
+      position: relative;
+      background: linear-gradient(135deg, var(--primary-800) 0%, var(--primary-600) 100%);
+      border-radius: 24px;
+      padding: 40px;
+      color: white;
+      margin-bottom: 48px;
+      box-shadow: var(--shadow-hero);
+      overflow: hidden;
+      min-height: 240px;
+    }
+
+    .hero-blob-1, .hero-blob-2 {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .hero-blob-1 {
+      width: 280px;
+      height: 280px;
+      top: -100px;
+      right: -50px;
+    }
+
+    .hero-blob-2 {
+      width: 180px;
+      height: 180px;
+      bottom: -40px;
+      left: 40px;
+    }
+
+    .hero-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 484px;
+      width: 864px;
+      height: 121px;
+      z-index: 1;
+      position: relative;
+    }
+
+    .hero-left {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .hero-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2.2px;
+      text-transform: uppercase;
+      color: rgba(156, 242, 232, 0.8);
+    }
+
+    .hero-amount {
+      font-family: var(--font-display);
+      font-size: 60px;
+      font-weight: 800;
+      line-height: 60px;
+      letter-spacing: -3px;
+      color: white;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .meta-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      background: rgba(15, 118, 110, 0.4);
+      border-radius: var(--radius-full);
+      gap: 8px;
+    }
+
+    .meta-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: #A3FAEF;
+    }
+
+    .hero-ring {
+      position: relative;
+      width: 120px;
+      height: 120px;
+    }
+
+    .hero-ring svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .ring-background {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.2);
+      stroke-width: 8;
+    }
+
+    .ring-progress {
+      fill: none;
+      stroke: white;
+      stroke-width: 8;
+      stroke-linecap: round;
+    }
+
+    .ring-label {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .ring-percent {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .ring-text {
+      font-size: 10px;
+      font-weight: 600;
+      opacity: 0.8;
+    }
+
+    /* Coins Section */
+    .coins-container {
+      margin-bottom: 40px;
+    }
+
+    .coins-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--neutral-900);
+    }
+
+    .coins-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .coin-card {
+      background: white;
+      border-radius: var(--radius-md);
+      padding: 24px;
+      text-align: center;
+      box-shadow: var(--shadow-card);
+      transition: transform 0.2s ease;
+    }
+
+    .coin-card:hover {
+      transform: translateY(-4px);
+    }
+
+    .coin-value {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--primary-800);
+      margin-bottom: 8px;
+    }
+
+    .coin-count {
+      font-size: 14px;
+      color: var(--neutral-500);
+      font-weight: 500;
+    }
+
+    .coin-total {
+      font-size: 12px;
+      color: var(--primary-600);
+      margin-top: 8px;
+      font-weight: 600;
+    }
+
+    /* Status Section */
+    .status-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .status-card {
+      background: white;
+      border-radius: var(--radius-md);
+      padding: 24px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .status-title {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--neutral-600);
+      margin-bottom: 16px;
+    }
+
+    .status-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--primary-800);
+      margin-bottom: 12px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: var(--neutral-100);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary-400) 0%, var(--primary-600) 100%);
+      border-radius: var(--radius-full);
+    }
+
+    .status-meta {
+      font-size: 12px;
+      color: var(--neutral-500);
+      margin-top: 8px;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--primary-50);
+      color: var(--primary-800);
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: var(--radius-full);
+      margin-top: 8px;
+    }
+
+    /* Chart Section */
+    .chart-section {
+      background: white;
+      border-radius: var(--radius-md);
+      padding: 32px;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 32px;
+    }
+
+    .chart-title {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--neutral-900);
+      margin-bottom: 24px;
+    }
+
+    /* Settings Section */
+    .settings-group {
+      background: white;
+      border-radius: var(--radius-md);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .danger-zone {
+      border-left: 4px solid #EF4444;
+      background: rgba(239, 68, 68, 0.02);
+    }
+
+    .settings-title {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--neutral-900);
+    }
+
+    .settings-item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-bottom: 16px;
+    }
+
+    .settings-item:last-child {
+      padding-bottom: 0;
+    }
+
+    .settings-item label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: #6E7977;
+    }
+
+    .settings-input {
+      padding: 12px 16px;
+      background: #F1F4F8;
+      border-radius: 8px;
+      font-size: 16px;
+      width: 100%;
+    }
+
+    .btn-danger {
+      padding: 12px 16px;
+      background: #EF4444;
+      color: white;
+      border-radius: var(--radius-full);
+      font-weight: 700;
+      font-size: 14px;
+      margin-top: 16px;
+      cursor: pointer;
+    }
+
+    .btn-danger:hover {
+      background: #DC2626;
+    }
+
+    .danger-note {
+      font-size: 12px;
+      color: var(--neutral-500);
+      margin-top: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 200px; }
+      .main-content { margin-left: 200px; padding: 80px 20px 40px; }
+      .coins-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-logo">
+        <img src="/logo.svg" alt="Smart Piggy Bank" class="logo-svg">
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-link active" onclick="switchPage('dashboard')">📊 Dashboard</a>
+        <a class="nav-link" onclick="switchPage('statistics')">📈 Statistics</a>
+        <a class="nav-link" onclick="switchPage('settings')">⚙️ Settings</a>
+      </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" id="pages-container"></div>
+  </div>
+
+  <script type="module">
+    // Import page modules
+    import { renderDashboard } from './js/dashboard.js';
+    import { renderStatistics, initCharts } from './js/statistics.js';
+    import { renderSettings } from './js/settings.js';
+
+    // Mock data for coins
+    const coins = { '10': 5, '5': 3, '2': 7, '1': 12 };
+
+    // Initialize pages in the container
+    function initializePages() {
+      const container = document.getElementById('pages-container');
+      container.innerHTML = '';
+      container.innerHTML += renderDashboard();
+      container.innerHTML += renderStatistics();
+      container.innerHTML += renderSettings();
+      updateDashboard();
+    }
+
+    // Update dashboard with current data
+    function updateDashboard() {
+      let totalAmount = 0, totalCoins = 0;
+      for (const [denom, count] of Object.entries(coins)) {
+        totalAmount += parseInt(denom) * count;
+        totalCoins += count;
+      }
+      const totalEl = document.getElementById('total-amount');
+      const coinsEl = document.getElementById('total-coins');
+      if (totalEl) totalEl.textContent = totalAmount + '฿';
+      if (coinsEl) coinsEl.textContent = totalCoins + ' coins';
+    }
+
+    // Switch between pages
+    function switchPage(pageName) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+      
+      const targetPage = document.getElementById(pageName + '-page');
+      if (targetPage) targetPage.classList.add('active');
+      
+      event.target.classList.add('active');
+      
+      if (pageName === 'statistics') {
+        setTimeout(initCharts, 100);
+      }
+    }
+
+    // Expose functions to global scope for onclick handlers
+    window.switchPage = switchPage;
+    window.updateDashboard = updateDashboard;
+
+    // Initialize on load
+    initializePages();
+  </script>
+</body>
+</html>
