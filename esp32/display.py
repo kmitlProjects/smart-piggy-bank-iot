@@ -31,7 +31,7 @@ def init_display(width=128, height=64):
     return ssd1306.SSD1306_I2C(width, height, i2c, addr=oled_addr)
 
 
-def render_status(oled, counts, total, is_full, estimated_total=None, fill_percent=None):
+def render_status(oled, counts, total, is_full, estimated_total=None, fill_percent=None, ip_text=None):
     if oled is None:
         return
 
@@ -47,26 +47,30 @@ def render_status(oled, counts, total, is_full, estimated_total=None, fill_perce
     oled.text("10=" + str(c10), 64, 16)
     oled.text("T=" + str(total), 0, 34)
 
-    if estimated_total is None:
-        oled.text("E=--", 0, 46)
-    else:
-        oled.text("E~" + str(estimated_total), 0, 46)
-
     if fill_percent is None:
-        oled.text("F=--%", 64, 46)
+        oled.text("F=--%", 64, 34)
     else:
-        oled.text("F=" + str(fill_percent) + "%", 64, 46)
+        oled.text("F=" + str(fill_percent) + "%", 64, 34)
+
+    if ip_text is None or ip_text == "":
+        oled.text("IP: --", 0, 56)
+    else:
+        oled.text("IP:" + str(ip_text), 0, 56)
 
     if is_full:
-        oled.text("FULL", 84, 56)
+        oled.text("!", 120, 34)
     oled.show()
 
 
-def show_boot_screen(oled):
+def show_boot_screen(oled, ip_text=None):
     if oled is None:
         return
 
     oled.fill(0)
     oled.text("Smart Piggy Bank", 0, 0)
     oled.text("System Ready", 0, 20)
+    if ip_text is None or ip_text == "":
+        oled.text("IP: --", 0, 56)
+    else:
+        oled.text("IP:" + str(ip_text), 0, 56)
     oled.show()

@@ -57,6 +57,35 @@ def pulse_output(pin, ms=40):
     pin.off()
 
 
+def safe_show_boot_screen(oled, ip_text=None):
+    try:
+        show_boot_screen(oled, ip_text=ip_text)
+    except TypeError:
+        show_boot_screen(oled)
+
+
+def safe_render_status(oled, counts, total, is_full, estimated_total=None, fill_percent=None, ip_text=None):
+    try:
+        render_status(
+            oled,
+            counts,
+            total,
+            is_full,
+            estimated_total=estimated_total,
+            fill_percent=fill_percent,
+            ip_text=ip_text,
+        )
+    except TypeError:
+        render_status(
+            oled,
+            counts,
+            total,
+            is_full,
+            estimated_total=estimated_total,
+            fill_percent=fill_percent,
+        )
+
+
 def run():
     led = Pin(LED_PIN, Pin.OUT)
     buzzer = Pin(BUZZER_PIN, Pin.OUT)
@@ -67,6 +96,7 @@ def run():
     coins = CoinCounter()
     reader = init_rfid()
     oled = init_display()
+    device_ip = None
 
     # ===== WEB STATUS FUNCTION =====
     def get_status():
@@ -83,7 +113,7 @@ def run():
         }
 
 
-    show_boot_screen(oled)
+    safe_show_boot_screen(oled, ip_text=device_ip)
 
     sensor = None
     distance_cm = None
@@ -102,7 +132,9 @@ def run():
     wlan = None
     if WIFI_SSID and WIFI_PASSWORD:
         wlan = connect_wifi(WIFI_SSID, WIFI_PASSWORD)
-        print("WiFi connected:", is_connected(wlan), "IP:", ip_address(wlan))
+        device_ip = ip_address(wlan)
+        print("WiFi connected:", is_connected(wlan), "IP:", device_ip)
+        safe_show_boot_screen(oled, ip_text=device_ip)
         # start server
         _thread.start_new_thread(start_server, (get_status,))
     else:
@@ -126,7 +158,7 @@ def run():
     last_mqtt_publish_ms = 0
 
     print("System Ready")
-    render_status(oled, coins.snapshot(), coins.total(), full_flag)
+    safe_render_status(oled, coins.snapshot(), coins.total(), full_flag, ip_text=device_ip)
     
 
 
@@ -189,13 +221,14 @@ def run():
 
         if time.ticks_diff(now, last_display_ms) >= DISPLAY_INTERVAL_MS:
             last_display_ms = now
-            render_status(
+            safe_render_status(
                 oled,
                 coins.snapshot(),
                 coins.total(),
                 full_flag,
                 estimated_total=estimated_total,
                 fill_percent=fill_percent,
+                ip_text=device_ip,
             )
 
         # Publish to MQTT every DASHBOARD_UPDATE_MS
