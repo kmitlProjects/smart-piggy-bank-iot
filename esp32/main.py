@@ -8,6 +8,7 @@ from lock import init_lock
 from rfid import init_rfid, read_card_uid
 from wifi import connect_wifi, is_connected, ip_address
 from mqtt_handler import MQTTHandler
+from webserver import start_server
 
 try:
     from ultrasonic import UltrasonicSensor, is_full, estimate_coin_level
