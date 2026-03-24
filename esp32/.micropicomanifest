@@ -1,0 +1,15 @@
+{
+  "exclude_patterns": [
+    ".vscode",
+    ".git",
+    ".gitignore",
+    ".micropico",
+    "tests",
+    "frontend",
+    "__pycache__",
+    ".pytest_cache",
+    "*.pyc",
+    ".env",
+    ".DS_Store"
+  ]
+}
