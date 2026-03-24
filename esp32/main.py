@@ -11,7 +11,13 @@ from mqtt_handler import MQTTHandler
 from webserver import start_server
 
 try:
-    from ultrasonic import UltrasonicSensor, is_full, estimate_coin_level
+    from ultrasonic import (
+        UltrasonicSensor,
+        is_full,
+        estimate_coin_level,
+        EMPTY_THRESHOLD_CM,
+        FULL_THRESHOLD_CM,
+    )
     HAS_ULTRASONIC = True
 except ImportError:
     HAS_ULTRASONIC = False
@@ -34,10 +40,11 @@ DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
 DASHBOARD_UPDATE_MS = 5000
 COIN_NOISE_GUARD_MS = 300
-BIN_EMPTY_DISTANCE_CM = 20.0
-BIN_FULL_DISTANCE_CM = 5.0
+BIN_EMPTY_DISTANCE_CM = 17.5
+BIN_FULL_DISTANCE_CM = 4.9
 BIN_MAX_COINS_EST = 400
 AVG_COIN_VALUE_EST = 4.5
+ULTRASONIC_EMA_ALPHA = 0.25
 
 # Indicators.
 LED_PIN = 18
@@ -162,7 +169,12 @@ def run():
 
         if sensor is not None and time.ticks_diff(now, last_ultrasonic_ms) >= ULTRASONIC_INTERVAL_MS:
             last_ultrasonic_ms = now
-            distance_cm = sensor.measure_distance_cm(samples=2)
+            raw_distance_cm = sensor.measure_distance_cm(samples=8)
+            if raw_distance_cm is not None:
+                if distance_cm is None:
+                    distance_cm = raw_distance_cm
+                else:
+                    distance_cm = distance_cm + (ULTRASONIC_EMA_ALPHA * (raw_distance_cm - distance_cm))
             full_flag = is_full(distance_cm)
             estimate = estimate_coin_level(
                 distance_cm,
