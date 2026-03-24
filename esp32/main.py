@@ -282,9 +282,7 @@ def run():
                 "fill_percent": fill_percent,
             }
             sent = mqtt.publish(payload)
-            if sent:
-                print("MQTT: published")
-            else:
+            if not sent:
                 print("MQTT: publish failed")
 
         time.sleep_ms(20)
