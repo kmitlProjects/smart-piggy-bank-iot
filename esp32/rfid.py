@@ -44,11 +44,36 @@ def init_rfid():
     )
 
 
+def recover_reader(reader):
+    ok = False
+
+    try:
+        reader.stop_crypto1()
+        ok = True
+    except Exception:
+        pass
+
+    try:
+        if hasattr(reader, "hard_reset"):
+            reader.hard_reset()
+        if hasattr(reader, "init"):
+            reader.init()
+        ok = True
+    except Exception:
+        pass
+
+    return ok
+
+
 def is_card_present(reader):
     # REQALL (WUPA, 0x52) wakes cards in both IDLE and HALT state.
     # REQIDL (REQA, 0x26) only wakes IDLE cards, which misses cards that
     # were already halt()-ed by a previous read.
     try:
+        try:
+            reader.stop_crypto1()
+        except Exception:
+            pass
         status, _ = reader.request(reader.REQALL)
         return status == reader.OK
     except Exception:
@@ -70,8 +95,5 @@ def read_card_uid(reader):
         return uid
     except Exception as exc:
         print("RFID read error:", exc)
-        try:
-            reader.stop_crypto1()
-        except:
-            pass
+        recover_reader(reader)
         return None

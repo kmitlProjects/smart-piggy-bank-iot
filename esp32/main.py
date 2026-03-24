@@ -1,11 +1,28 @@
 from machine import Pin
 import time
+time.sleep(5)  # Delay to allow time for REPL connection after reset
 import _thread
 
 from coins import CoinCounter
 from display import init_display, render_status, show_boot_screen
 from lock import init_lock
 from rfid import init_rfid, read_card_uid
+try:
+    from rfid import recover_reader as _rfid_recover_reader
+except ImportError:
+    def _rfid_recover_reader(reader):
+        try:
+            reader.stop_crypto1()
+        except Exception:
+            pass
+        try:
+            if hasattr(reader, "hard_reset"):
+                reader.hard_reset()
+            if hasattr(reader, "init"):
+                reader.init()
+            return True
+        except Exception:
+            return False
 from wifi import connect_wifi, is_connected, ip_address
 from mqtt_handler import MQTTHandler
 from webserver import start_server
@@ -36,6 +53,7 @@ MQTT_TOPIC_SUBSCRIBE = "piggybank/command"
 UNLOCK_TIME_MS = 5000
 RFID_COOLDOWN_MS = 1200
 RFID_POLL_INTERVAL_MS = 150  # poll RFID every 150ms; avoids hammering SPI bus
+RFID_RECOVERY_IDLE_MS = 15000
 DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
 DASHBOARD_UPDATE_MS = 5000
@@ -153,6 +171,8 @@ def run():
     unlock_started_ms = None
     last_card_ms = 0
     last_rfid_ms = 0
+    last_rfid_ok_ms = time.ticks_ms()
+    last_rfid_recover_ms = 0
     last_display_ms = 0
     last_ultrasonic_ms = 0
     last_mqtt_publish_ms = 0
@@ -171,6 +191,7 @@ def run():
                 uid = read_card_uid(reader)
                 if uid is not None and time.ticks_diff(now, last_card_ms) >= RFID_COOLDOWN_MS:
                     last_card_ms = now
+                    last_rfid_ok_ms = now
                     coins.suppress_for(COIN_NOISE_GUARD_MS)
                     lock.unlock()
                     is_locked = False
@@ -180,6 +201,17 @@ def run():
                     pulse_output(buzzer)
             except Exception as exc:
                 print("[RFID ERROR]:", exc)
+                if time.ticks_diff(now, last_rfid_recover_ms) >= 2000:
+                    if _rfid_recover_reader(reader):
+                        print("[RFID] recovered after error")
+                    last_rfid_recover_ms = now
+
+        if time.ticks_diff(now, last_rfid_ok_ms) >= RFID_RECOVERY_IDLE_MS:
+            if time.ticks_diff(now, last_rfid_recover_ms) >= 2000:
+                if _rfid_recover_reader(reader):
+                    print("[RFID] periodic recovery")
+                last_rfid_recover_ms = now
+            last_rfid_ok_ms = now
 
         if not is_locked and unlock_started_ms is not None:
             elapsed = time.ticks_diff(now, unlock_started_ms)
