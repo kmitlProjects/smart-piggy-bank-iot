@@ -1,7 +1,7 @@
 from machine import Pin
 import time
-time.sleep(5)  # Delay to allow time for REPL connection after reset
 import _thread
+import os
 
 from coins import CoinCounter
 from display import init_display, render_status, show_boot_screen
@@ -263,6 +263,10 @@ def run():
                 ip_text=device_ip,
             )
 
+        # Check WiFi status and update device_ip
+        if wlan is not None:
+            device_ip = ip_address(wlan)
+
         # Publish to MQTT every DASHBOARD_UPDATE_MS
         if time.ticks_diff(now, last_mqtt_publish_ms) >= DASHBOARD_UPDATE_MS:
             last_mqtt_publish_ms = now
@@ -286,4 +290,20 @@ def run():
         time.sleep_ms(20)
 
 
-run()
+def _safe_mode_enabled():
+    try:
+        return "NO_AUTORUN" in os.listdir()
+    except Exception:
+        return False
+
+
+if _safe_mode_enabled():
+    print("[SAFE MODE] NO_AUTORUN found -> skip run()")
+else:
+    print("[BOOT] Starting in 5s (Ctrl+C to stay in REPL)")
+    try:
+        for _ in range(50):
+            time.sleep_ms(100)
+        run()
+    except KeyboardInterrupt:
+        print("[BOOT] Interrupted before run()")
