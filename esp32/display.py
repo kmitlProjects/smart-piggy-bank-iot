@@ -53,7 +53,7 @@ def render_status(oled, counts, total, is_full, estimated_total=None, fill_perce
         oled.text("F=" + str(fill_percent) + "%", 64, 34)
 
     if ip_text is None or ip_text == "":
-        oled.text("IP: --", 0, 56)
+        oled.text("WiFi Lost", 0, 56)
     else:
         oled.text("IP:" + str(ip_text), 0, 56)
 
@@ -70,7 +70,7 @@ def show_boot_screen(oled, ip_text=None):
     oled.text("Smart Piggy Bank", 0, 0)
     oled.text("System Ready", 0, 20)
     if ip_text is None or ip_text == "":
-        oled.text("IP: --", 0, 56)
+        oled.text("WiFi Lost", 0, 56)
     else:
         oled.text("IP:" + str(ip_text), 0, 56)
     oled.show()
