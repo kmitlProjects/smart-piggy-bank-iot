@@ -1,4 +1,6 @@
 from flask import Flask, jsonify, request
+import os
+import socket
 import threading
 import time
 
@@ -26,6 +28,14 @@ ALLOWED_ORIGINS = {
 }
 
 
+def _instance_info() -> dict:
+    return {
+        "host": socket.gethostname(),
+        "pid": os.getpid(),
+        "in_docker": os.path.exists("/.dockerenv"),
+    }
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
 
@@ -45,6 +55,8 @@ def create_app() -> Flask:
     @app.after_request
     def add_cors_headers(response):
         if request.path.startswith("/api/"):
+            response.headers["X-Backend-Host"] = socket.gethostname()
+            response.headers["X-Backend-Pid"] = str(os.getpid())
             origin = request.headers.get("Origin", "")
             if origin in ALLOWED_ORIGINS:
                 response.headers["Access-Control-Allow-Origin"] = origin
@@ -55,7 +67,7 @@ def create_app() -> Flask:
 
     @app.get("/api/health")
     def health():
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "instance": _instance_info()})
 
     @app.get("/api/status")
     def status():
@@ -122,9 +134,17 @@ def create_app() -> Flask:
         device_id = payload.get("device_id", "esp32")
         sent = publish_reset_command(device_id=device_id)
         if not sent:
-            return jsonify({"error": "failed to send reset command to device"}), 503
+            return jsonify({
+                "error": "failed to send reset command to device",
+                "instance": _instance_info(),
+            }), 503
         result = reset_database(clear_cards=False)  # Never clear locked RFID list
-        return jsonify({"reset": result, "command_sent": True, "device_id": device_id})
+        return jsonify({
+            "reset": result,
+            "command_sent": True,
+            "device_id": device_id,
+            "instance": _instance_info(),
+        })
 
     # NOTE: /api/rfid/enroll-mode endpoint removed (enrollment disabled)
 
