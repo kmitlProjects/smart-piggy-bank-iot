@@ -4,7 +4,6 @@ Makes HTTP request to backend /api/access/check
 """
 import socket
 import json
-import time
 
 
 def check_authorization(backend_host, backend_port, uid, wifi_connected, timeout_s=5):
@@ -36,7 +35,9 @@ def check_authorization(backend_host, backend_port, uid, wifi_connected, timeout
     }
     
     if not backend_host:
-        return {**default_response, "reason": "NO_BACKEND_HOST"}
+        out = default_response.copy()
+        out["reason"] = "NO_BACKEND_HOST"
+        return out
     
     try:
         # Build HTTP request
@@ -45,13 +46,15 @@ def check_authorization(backend_host, backend_port, uid, wifi_connected, timeout
             "wifi_connected": wifi_connected
         })
         
-        http_request = f"""POST /api/access/check HTTP/1.1\r
-Host: {backend_host}:{backend_port}\r
-Content-Type: application/json\r
-Content-Length: {len(payload)}\r
-Connection: close\r
-\r
-{payload}"""
+        http_request = (
+            "POST /api/access/check HTTP/1.1\r\n"
+            "Host: %s:%s\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s"
+        ) % (backend_host, backend_port, len(payload), payload)
         
         # Create socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -75,7 +78,8 @@ Connection: close\r
         sock.close()
         
         # Parse HTTP response
-        response_str = response_data.decode('utf-8', errors='ignore')
+        # MicroPython decode does not support keyword args like errors='ignore'.
+        response_str = response_data.decode('utf-8', 'ignore')
         
         # Split headers and body
         if '\r\n\r\n' in response_str:
@@ -94,11 +98,10 @@ Connection: close\r
         }
         
     except Exception as e:
-        print(f"[AUTH] Error: {e}")
-        return {
-            **default_response,
-            "error": str(e)
-        }
+        print("[AUTH] Error:", e)
+        out = default_response.copy()
+        out["error"] = str(e)
+        return out
 
 
 def should_unlock(result):

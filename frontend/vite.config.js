@@ -1,6 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const frontendPort = Number(process.env.FRONTEND_PORT || '5173')
+const frontendHost = process.env.FRONTEND_HOST || '127.0.0.1'
+const apiTarget = process.env.VITE_API_TARGET || 'http://127.0.0.1:5001'
 
 export default defineConfig({
   plugins: [react()],
@@ -19,12 +25,12 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: frontendPort,
     open: false,
-    host: '127.0.0.1',
+    host: frontendHost,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5001',
+        target: apiTarget,
         changeOrigin: true,
       },
     },

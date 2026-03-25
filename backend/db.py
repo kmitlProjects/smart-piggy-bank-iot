@@ -318,33 +318,59 @@ def list_rfid_cards() -> List[Dict[str, Any]]:
         conn.close()
 
 
-def is_card_authorized(uid: str) -> bool:
-    conn = _conn()
+def is_card_authorized(uid: Any) -> bool:
+    """
+    Check if RFID card is authorized using LOCKED_RFID_UIDS (hardcoded closed/locked list).
+    NOTE: Dynamic enrollment has been disabled. System is CLOSED - only 2 UIDs allowed.
+    
+    Args:
+        uid: RFID card UID (format: list [182, 188, 21, 6, 25] or string representation)
+    
+    Returns:
+        True if UID matches one of 2 allowed UIDs, False otherwise
+    """
+    from config import LOCKED_RFID_UIDS
+    
+    # Handle both list and string formats
     try:
-        row = conn.execute(
-            "SELECT 1 FROM rfid_cards WHERE uid = ? AND is_active = 1 LIMIT 1", (uid,)
-        ).fetchone()
-        return row is not None
-    finally:
-        conn.close()
+        # If uid is a string representation of list, parse it
+        if isinstance(uid, str) and uid.startswith('['):
+            import ast
+            uid = ast.literal_eval(uid)
+    except:
+        pass
+    
+    # Check against locked UIDs
+    for allowed_uid in LOCKED_RFID_UIDS:
+        if uid == allowed_uid:
+            return True
+    
+    return False
 
 
-def log_access(uid: str, wifi_connected: bool, authorized: bool, access_granted: bool, reason: str) -> None:
+def _uid_to_text(uid: Any) -> str:
+    if isinstance(uid, list):
+        return str(uid)
+    return "" if uid is None else str(uid)
+
+
+def log_access(uid: Any, wifi_connected: bool, authorized: bool, access_granted: bool, reason: str) -> None:
     conn = _conn()
     try:
+        uid_text = _uid_to_text(uid)
         conn.execute(
             """
             INSERT INTO access_logs (uid, wifi_connected, authorized, access_granted, reason, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (uid, int(bool(wifi_connected)), int(bool(authorized)), int(bool(access_granted)), reason, _now_iso()),
+            (uid_text, int(bool(wifi_connected)), int(bool(authorized)), int(bool(access_granted)), reason, _now_iso()),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def check_access(uid: str, wifi_connected: bool) -> Dict[str, Any]:
+def check_access(uid: Any, wifi_connected: bool) -> Dict[str, Any]:
     authorized = is_card_authorized(uid)
     granted = bool(wifi_connected) and authorized
 

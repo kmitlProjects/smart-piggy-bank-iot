@@ -7,7 +7,7 @@ from coins import CoinCounter
 from display import init_display, render_status, show_boot_screen
 from lock import init_lock
 from rfid import init_rfid, read_card_uid
-from auth import check_authorization, should_unlock
+from auth import check_authorization
 try:
     from rfid import recover_reader as _rfid_recover_reader
 except ImportError:
@@ -35,6 +35,7 @@ from config import (
     MQTT_TOPIC_SUBSCRIBE,
     BACKEND_HOST,
     BACKEND_PORT,
+    LOCKED_RFID_UIDS,
 )
 
 try:
@@ -74,6 +75,17 @@ def pulse_output(pin, ms=40):
     pin.on()
     time.sleep_ms(ms)
     pin.off()
+
+
+def deny_beep(buzzer):
+    # Audible deny pattern: two longer beeps.
+    for _ in range(2):
+        pulse_output(buzzer, 140)
+        time.sleep_ms(120)
+
+
+def uid_allowed_local(uid):
+    return uid in LOCKED_RFID_UIDS
 
 
 def safe_show_boot_screen(oled, ip_text=None):
@@ -166,6 +178,18 @@ def run():
         topic_subscribe=MQTT_TOPIC_SUBSCRIBE,
         client_id="piggybank_esp32"
     )
+
+    # NOTE: RFID enrollment mode has been removed.
+    # System now uses locked RFID UIDs only. No dynamic enrollment.
+
+    def on_mqtt_command(topic, payload):
+        # NOTE: rfid_enroll_mode command is ignored (enrollment disabled)
+        try:
+            pass
+        except Exception as exc:
+            print(f"[MQTT CMD ERROR] {exc}")
+
+    mqtt.set_message_handler(on_mqtt_command)
     mqtt.connect()
 
 
@@ -194,39 +218,60 @@ def run():
                     last_card_ms = now
                     last_rfid_ok_ms = now
                     coins.suppress_for(COIN_NOISE_GUARD_MS)
-                    
-                    # Check authorization with backend before unlocking
+
+                    # RFID card detected - authorize first, then unlock only if allowed.
                     wifi_status = is_connected(wlan)
-                    print(f"[RFID] Scanned card: {uid}, WiFi: {wifi_status}")
-                    
-                    auth_result = check_authorization(
-                        BACKEND_HOST,
-                        BACKEND_PORT,
-                        uid,
-                        wifi_status,
-                        timeout_s=3
-                    )
-                    
-                    print(f"[AUTH] Result: {auth_result}")
-                    
-                    # Only unlock if authorization granted
-                    if should_unlock(auth_result):
+
+                    auth_result = {
+                        "authorized": False,
+                        "access_granted": False,
+                        "reason": "NO_AUTH_CHECK",
+                        "error": None,
+                    }
+
+                    if wifi_status:
+                        auth_result = check_authorization(
+                            BACKEND_HOST,
+                            BACKEND_PORT,
+                            uid,
+                            wifi_status,
+                            timeout_s=2
+                        )
+                    else:
+                        auth_result = {
+                            "authorized": False,
+                            "access_granted": False,
+                            "reason": "WIFI_DISCONNECTED",
+                            "error": "wifi disconnected",
+                        }
+
+                    # If backend is unavailable, fallback to local whitelist.
+                    if not auth_result.get("access_granted", False) and auth_result.get("error"):
+                        if uid_allowed_local(uid):
+                            auth_result["authorized"] = True
+                            auth_result["access_granted"] = True
+                            auth_result["reason"] = "LOCAL_WHITELIST_ALLOW"
+
+                    if auth_result.get("access_granted", False):
                         lock.unlock()
                         is_locked = False
                         unlock_started_ms = now
-                        print(f"[UNLOCK] Authorized! UID: {uid}")
-                        pulse_output(led, 60)     # Long beep for success
-                        pulse_output(buzzer, 100)
+                        print(f"[UNLOCK] Card UID: {uid}")
+                        pulse_output(led)
+                        pulse_output(buzzer)
                     else:
-                        print(f"[DENIED] Reason: {auth_result.get('reason')}")
-                        pulse_output(led, 20)     # Short beep for denied
-                        pulse_output(buzzer, 50)
+                        print(f"[DENY] Card UID: {uid} reason={auth_result.get('reason')}")
+                        deny_beep(buzzer)
+
+                    print(f"[AUTH-LOG] Result: {auth_result}")
             except Exception as exc:
                 print("[RFID ERROR]:", exc)
                 if time.ticks_diff(now, last_rfid_recover_ms) >= 2000:
                     if _rfid_recover_reader(reader):
                         print("[RFID] recovered after error")
                     last_rfid_recover_ms = now
+
+        mqtt.check_message()
 
         if time.ticks_diff(now, last_rfid_ok_ms) >= RFID_RECOVERY_IDLE_MS:
             if time.ticks_diff(now, last_rfid_recover_ms) >= 2000:
