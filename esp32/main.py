@@ -7,6 +7,7 @@ from coins import CoinCounter
 from display import init_display, render_status, show_boot_screen
 from lock import init_lock
 from rfid import init_rfid, read_card_uid
+from auth import check_authorization, should_unlock
 try:
     from rfid import recover_reader as _rfid_recover_reader
 except ImportError:
@@ -32,6 +33,8 @@ from config import (
     MQTT_BROKER,
     MQTT_TOPIC_PUBLISH,
     MQTT_TOPIC_SUBSCRIBE,
+    BACKEND_HOST,
+    BACKEND_PORT,
 )
 
 try:
@@ -191,12 +194,33 @@ def run():
                     last_card_ms = now
                     last_rfid_ok_ms = now
                     coins.suppress_for(COIN_NOISE_GUARD_MS)
-                    lock.unlock()
-                    is_locked = False
-                    unlock_started_ms = now
-                    print("[UNLOCK] Card UID:", uid)
-                    pulse_output(led)
-                    pulse_output(buzzer)
+                    
+                    # Check authorization with backend before unlocking
+                    wifi_status = is_connected(wlan)
+                    print(f"[RFID] Scanned card: {uid}, WiFi: {wifi_status}")
+                    
+                    auth_result = check_authorization(
+                        BACKEND_HOST,
+                        BACKEND_PORT,
+                        uid,
+                        wifi_status,
+                        timeout_s=3
+                    )
+                    
+                    print(f"[AUTH] Result: {auth_result}")
+                    
+                    # Only unlock if authorization granted
+                    if should_unlock(auth_result):
+                        lock.unlock()
+                        is_locked = False
+                        unlock_started_ms = now
+                        print(f"[UNLOCK] Authorized! UID: {uid}")
+                        pulse_output(led, 60)     # Long beep for success
+                        pulse_output(buzzer, 100)
+                    else:
+                        print(f"[DENIED] Reason: {auth_result.get('reason')}")
+                        pulse_output(led, 20)     # Short beep for denied
+                        pulse_output(buzzer, 50)
             except Exception as exc:
                 print("[RFID ERROR]:", exc)
                 if time.ticks_diff(now, last_rfid_recover_ms) >= 2000:
