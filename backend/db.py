@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from config import DB_PATH, DATA_DIR
@@ -64,6 +64,24 @@ CREATE TABLE IF NOT EXISTS access_logs (
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS connectivity_state (
+    device_id TEXT PRIMARY KEY,
+    current_state TEXT NOT NULL,
+    last_seen_at TEXT,
+    changed_at TEXT NOT NULL,
+    reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS connectivity_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    last_seen_at TEXT,
+    timeout_seconds INTEGER,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -89,6 +107,173 @@ def _conn() -> sqlite3.Connection:
 
 def _to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return dict(row)
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        text = value if isinstance(value, str) else str(value)
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _insert_connectivity_event(
+    conn: sqlite3.Connection,
+    device_id: str,
+    event: str,
+    reason: str,
+    last_seen_at: Optional[str] = None,
+    timeout_seconds: Optional[int] = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO connectivity_events (device_id, event, reason, last_seen_at, timeout_seconds, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (device_id, event, reason, last_seen_at, timeout_seconds, _now_iso()),
+    )
+
+
+def mark_device_seen(device_id: str, reason: str = "HEARTBEAT") -> None:
+    now = _now_iso()
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT device_id, current_state, last_seen_at FROM connectivity_state WHERE device_id = ?",
+            (device_id,),
+        ).fetchone()
+
+        if row is None:
+            conn.execute(
+                """
+                INSERT INTO connectivity_state (device_id, current_state, last_seen_at, changed_at, reason)
+                VALUES (?, 'CONNECTED', ?, ?, ?)
+                """,
+                (device_id, now, now, reason),
+            )
+            _insert_connectivity_event(conn, device_id, "CONNECTED", reason, last_seen_at=now)
+        elif row["current_state"] == "DISCONNECTED":
+            conn.execute(
+                """
+                UPDATE connectivity_state
+                SET current_state = 'CONNECTED', last_seen_at = ?, changed_at = ?, reason = ?
+                WHERE device_id = ?
+                """,
+                (now, now, reason, device_id),
+            )
+            _insert_connectivity_event(conn, device_id, "RECONNECTED", reason, last_seen_at=now)
+        else:
+            conn.execute(
+                "UPDATE connectivity_state SET last_seen_at = ? WHERE device_id = ?",
+                (now, device_id),
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def process_connectivity_timeout(timeout_seconds: int, device_id: str = "esp32") -> bool:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT device_id, current_state, last_seen_at FROM connectivity_state WHERE device_id = ?",
+            (device_id,),
+        ).fetchone()
+
+        if row is None or row["current_state"] != "CONNECTED":
+            return False
+
+        last_seen = _parse_iso(row["last_seen_at"])
+        if last_seen is None:
+            return False
+
+        now_dt = _utc_now()
+        delta = (now_dt - last_seen).total_seconds()
+        if delta <= timeout_seconds:
+            return False
+
+        now_iso = _now_iso()
+        conn.execute(
+            """
+            UPDATE connectivity_state
+            SET current_state = 'DISCONNECTED', changed_at = ?, reason = ?
+            WHERE device_id = ?
+            """,
+            (now_iso, "TIMEOUT", device_id),
+        )
+        _insert_connectivity_event(
+            conn,
+            device_id,
+            "DISCONNECTED",
+            "TIMEOUT",
+            last_seen_at=row["last_seen_at"],
+            timeout_seconds=timeout_seconds,
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def get_connectivity_latest(device_id: str = "esp32") -> Dict[str, Any]:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT device_id, current_state, last_seen_at, changed_at, reason FROM connectivity_state WHERE device_id = ?",
+            (device_id,),
+        ).fetchone()
+
+        if row is None:
+            return {
+                "device_id": device_id,
+                "current_state": "UNKNOWN",
+                "is_connected": False,
+                "last_seen_at": None,
+                "changed_at": None,
+                "reason": "NO_HEARTBEAT",
+                "seconds_since_last_seen": None,
+            }
+
+        data = _to_dict(row)
+        data["is_connected"] = data["current_state"] == "CONNECTED"
+
+        last_seen = _parse_iso(data.get("last_seen_at"))
+        if last_seen is None:
+            data["seconds_since_last_seen"] = None
+        else:
+            now_dt = _utc_now()
+            data["seconds_since_last_seen"] = int((now_dt - last_seen).total_seconds())
+        return data
+    finally:
+        conn.close()
+
+
+def get_connectivity_history(limit: int = 100, device_id: str = "esp32") -> List[Dict[str, Any]]:
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, device_id, event, reason, last_seen_at, timeout_seconds, created_at
+            FROM connectivity_events
+            WHERE device_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (device_id, limit),
+        ).fetchall()
+        return [_to_dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def add_rfid_card(uid: str, owner_name: Optional[str] = None) -> Dict[str, Any]:
@@ -321,6 +506,8 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
         deleted_coin_events = conn.execute("DELETE FROM coin_events").rowcount
         deleted_access_logs = conn.execute("DELETE FROM access_logs").rowcount
         deleted_status = conn.execute("DELETE FROM latest_status").rowcount
+        deleted_connectivity_state = conn.execute("DELETE FROM connectivity_state").rowcount
+        deleted_connectivity_events = conn.execute("DELETE FROM connectivity_events").rowcount
         deleted_cards = 0
         if clear_cards:
             deleted_cards = conn.execute("DELETE FROM rfid_cards").rowcount
@@ -329,6 +516,8 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
             "coin_events": deleted_coin_events,
             "access_logs": deleted_access_logs,
             "latest_status": deleted_status,
+            "connectivity_state": deleted_connectivity_state,
+            "connectivity_events": deleted_connectivity_events,
             "rfid_cards": deleted_cards,
         }
     finally:

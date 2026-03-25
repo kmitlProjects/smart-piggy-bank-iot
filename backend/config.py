@@ -4,9 +4,32 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "piggybank.db")
 
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+
+def _load_env_file(file_path):
+	if not os.path.exists(file_path):
+		return
+
+	with open(file_path, "r", encoding="utf-8") as f:
+		for raw_line in f:
+			line = raw_line.strip()
+			if not line or line.startswith("#"):
+				continue
+			if "=" not in line:
+				continue
+
+			key, value = line.split("=", 1)
+			key = key.strip()
+			value = value.strip().strip('"').strip("'")
+			if key and key not in os.environ:
+				os.environ[key] = value
+
+
+_load_env_file(os.path.join(BASE_DIR, ".env"))
+
+MQTT_BROKER = os.getenv("MQTT_BROKER", "127.0.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC_DATA = os.getenv("MQTT_TOPIC_DATA", "piggybank/data")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "piggybank_backend_sub")
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "5000"))
+CONNECTIVITY_TIMEOUT_SEC = int(os.getenv("CONNECTIVITY_TIMEOUT_SEC", "10"))

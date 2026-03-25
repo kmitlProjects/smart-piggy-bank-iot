@@ -26,6 +26,13 @@ except ImportError:
 from wifi import connect_wifi, is_connected, ip_address
 from mqtt_handler import MQTTHandler
 from webserver import start_server
+from config import (
+    WIFI_SSID,
+    WIFI_PASSWORD,
+    MQTT_BROKER,
+    MQTT_TOPIC_PUBLISH,
+    MQTT_TOPIC_SUBSCRIBE,
+)
 
 try:
     from ultrasonic import (
@@ -39,15 +46,6 @@ try:
 except ImportError:
     HAS_ULTRASONIC = False
 
-
-# Optional network config.
-WIFI_SSID = "Galaxy A52 5GD9C0"
-WIFI_PASSWORD = "neae4850"
-
-# MQTT Config (HiveMQ Cloud)
-MQTT_BROKER = "broker.hivemq.com"
-MQTT_TOPIC_PUBLISH = "piggybank/data"
-MQTT_TOPIC_SUBSCRIBE = "piggybank/command"
 
 # Timing config.
 UNLOCK_TIME_MS = 5000
