@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+const API_BASE = ''
 
 const initialSummary = {
   coin_1: 0,
@@ -17,6 +17,7 @@ function App() {
   const [summary, setSummary] = useState(initialSummary)
   const [history, setHistory] = useState([])
   const [accessLogs, setAccessLogs] = useState([])
+  const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isResetting, setIsResetting] = useState(false)
@@ -46,17 +47,19 @@ function App() {
     setError('')
 
     try {
-      const [statusRes, summaryRes, historyRes, accessRes] = await Promise.all([
+      const [statusRes, summaryRes, historyRes, accessRes, cardsRes] = await Promise.all([
         fetchJson('/api/status'),
         fetchJson('/api/coins/summary'),
         fetchJson('/api/coins/history?limit=30'),
         fetchJson('/api/access/history?limit=30'),
+        fetchJson('/api/rfid/cards'),
       ])
 
       setStatus(statusRes.status || null)
       setSummary(summaryRes.summary || initialSummary)
       setHistory(Array.isArray(historyRes.history) ? historyRes.history : [])
       setAccessLogs(Array.isArray(accessRes.history) ? accessRes.history : [])
+      setCards(Array.isArray(cardsRes.cards) ? cardsRes.cards : [])
     } catch (err) {
       setError(err.message || 'Cannot load backend data')
     } finally {
@@ -89,6 +92,13 @@ function App() {
     } finally {
       setIsResetting(false)
     }
+  }
+
+  // NOTE: RFID enrollment functions have been removed.
+  // System now uses locked RFID UIDs (hardcoded whitelist on backend).
+  const handleDeleteCard = async (uid) => {
+    // Delete endpoint also removed - locked UIDs cannot be deleted
+    setError('Locked RFID system: card cannot be deleted.')
   }
 
   const fmtTs = (value) => {
@@ -235,6 +245,38 @@ function App() {
                   <td>{row.reason}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h3>RFID Config</h3>
+        {/* NOTE: Enrollment UI has been removed. System uses CLOSED locked RFID UIDs only. */}
+        <p className="rfid-hint">
+          🔒 <strong>Closed RFID System:</strong> Only 2 authorized UIDs can unlock the device:<br/>
+          • UID #1: [182, 188, 21, 6, 25]<br/>
+          • UID #2: [195, 118, 240, 6, 67]<br/>
+          All other cards are DENIED.
+        </p>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Authorized UID</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>[182, 188, 21, 6, 25]</td>
+                <td>✓ Active</td>
+              </tr>
+              <tr>
+                <td>[195, 118, 240, 6, 67]</td>
+                <td>✓ Active</td>
+              </tr>
             </tbody>
           </table>
         </div>

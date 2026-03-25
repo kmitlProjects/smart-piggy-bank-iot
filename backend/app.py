@@ -2,9 +2,8 @@ from flask import Flask, jsonify, request
 import threading
 import time
 
-from config import API_HOST, API_PORT, CONNECTIVITY_TIMEOUT_SEC
+from config import API_HOST, API_PORT, CONNECTIVITY_TIMEOUT_SEC, FRONTEND_PORT, LOCKED_RFID_UIDS
 from db import (
-    add_rfid_card,
     check_access,
     get_connectivity_history,
     get_connectivity_latest,
@@ -13,9 +12,7 @@ from db import (
     get_coin_summary,
     get_latest_status,
     init_db,
-    list_rfid_cards,
     process_connectivity_timeout,
-    deactivate_rfid_card,
     reset_database,
 )
 from mqtt_subscriber import MQTTIngestService
@@ -23,8 +20,8 @@ from mqtt_subscriber import MQTTIngestService
 
 mqtt_service = MQTTIngestService()
 ALLOWED_ORIGINS = {
-    "http://127.0.0.1:5173",
-    "http://localhost:5173",
+    f"http://127.0.0.1:{FRONTEND_PORT}",
+    f"http://localhost:{FRONTEND_PORT}",
 }
 
 
@@ -95,31 +92,22 @@ def create_app() -> Flask:
         limit = int(request.args.get("limit", 100))
         return jsonify({"history": get_access_history(limit=limit)})
 
+    # NOTE: RFID enrollment endpoints have been removed.
+    # System now uses LOCKED_RFID_UIDS (hardcoded whitelist).
     @app.get("/api/rfid/cards")
     def rfid_cards():
-        return jsonify({"cards": list_rfid_cards()})
-
-    @app.post("/api/rfid/cards")
-    def add_card():
-        payload = request.get_json(force=True)
-        uid = (payload.get("uid") or "").strip()
-        owner_name = payload.get("owner_name")
-        if not uid:
-            return jsonify({"error": "uid is required"}), 400
-        card = add_rfid_card(uid=uid, owner_name=owner_name)
-        return jsonify({"card": card})
-
-    @app.delete("/api/rfid/cards/<uid>")
-    def remove_card(uid):
-        ok = deactivate_rfid_card(uid)
-        if not ok:
-            return jsonify({"error": "uid not found"}), 404
-        return jsonify({"deleted": True, "uid": uid})
+        # Return locked RFID UIDs (read-only view)
+        cards = [{"uid": uid, "owner_name": None, "is_active": True} for uid in LOCKED_RFID_UIDS]
+        return jsonify({"cards": cards})
 
     @app.post("/api/access/check")
     def access_check():
         payload = request.get_json(force=True)
-        uid = (payload.get("uid") or "").strip()
+        uid_raw = payload.get("uid")
+        if isinstance(uid_raw, str):
+            uid = uid_raw.strip()
+        else:
+            uid = uid_raw
         wifi_connected = bool(payload.get("wifi_connected", False))
         if not uid:
             return jsonify({"error": "uid is required"}), 400
@@ -130,14 +118,18 @@ def create_app() -> Flask:
     @app.post("/api/reset")
     def reset():
         payload = request.get_json(silent=True) or {}
-        clear_cards = bool(payload.get("clear_cards", False))
-        result = reset_database(clear_cards=clear_cards)
-        return jsonify({"reset": result, "clear_cards": clear_cards})
+        result = reset_database(clear_cards=False)  # Never clear locked RFID list
+        return jsonify({"reset": result})
+
+    # NOTE: /api/rfid/enroll-mode endpoint removed (enrollment disabled)
 
     return app
 
 
-def main():
+# For Gunicorn: create app at module level and initialize services
+# This must be at module level so Gunicorn can import it
+def initialize_app():
+    """Initialize and run the Flask app with background services."""
     def timeout_watcher():
         while True:
             try:
@@ -151,7 +143,15 @@ def main():
     init_db()
     mqtt_service.start()
     threading.Thread(target=timeout_watcher, daemon=True).start()
-    app = create_app()
+    return create_app()
+
+
+# Module-level app for Gunicorn
+app = initialize_app()
+
+
+def main():
+    """For direct python execution (not Gunicorn)."""
     app.run(host=API_HOST, port=API_PORT, debug=False)
 
 

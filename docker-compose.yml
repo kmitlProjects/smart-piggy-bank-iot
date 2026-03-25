@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 5001
+      FRONTEND_PORT: 5173
+      MQTT_BROKER: host.docker.internal
+      MQTT_PORT: 1883
+      MQTT_TOPIC_DATA: piggybank/data
+      MQTT_TOPIC_COMMAND: piggybank/command
+      MQTT_CLIENT_ID: piggybank_backend_sub
+      CONNECTIVITY_TIMEOUT_SEC: 10
+    ports:
+      - "${BACKEND_HOST_PORT:-5001}:5001"
+    volumes:
+      - ./backend/data:/app/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      FRONTEND_HOST: 0.0.0.0
+      FRONTEND_PORT: 5173
+      VITE_API_TARGET: http://backend:5001
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
