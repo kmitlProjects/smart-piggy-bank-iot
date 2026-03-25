@@ -3,11 +3,8 @@ import time
 
 TRIG_PIN = 41
 ECHO_PIN = 42
-FULL_THRESHOLD_CM = 4.9
-EMPTY_THRESHOLD_CM = 17.5
-EMPTY_DEADBAND_CM = 0.8
-FULL_DEADBAND_CM = 0.2
-FILL_CURVE_GAMMA = 1.35
+FULL_THRESHOLD_CM = 5.0
+EMPTY_THRESHOLD_CM = 20.0
 
 
 class UltrasonicSensor:
@@ -55,34 +52,17 @@ def _clamp(value, low, high):
     return value
 
 
-def estimate_fill_percent(
-    distance_cm,
-    empty_cm=EMPTY_THRESHOLD_CM,
-    full_cm=FULL_THRESHOLD_CM,
-    empty_deadband_cm=EMPTY_DEADBAND_CM,
-    full_deadband_cm=FULL_DEADBAND_CM,
-    gamma=FILL_CURVE_GAMMA,
-):
+def estimate_fill_percent(distance_cm, empty_cm=EMPTY_THRESHOLD_CM, full_cm=FULL_THRESHOLD_CM):
     if distance_cm is None:
         return None
 
-    effective_empty_cm = empty_cm - empty_deadband_cm
-    effective_full_cm = full_cm + full_deadband_cm
-
-    span = effective_empty_cm - effective_full_cm
+    span = empty_cm - full_cm
     if span <= 0:
         return None
 
-    if distance_cm >= effective_empty_cm:
-        return 0
-    if distance_cm <= effective_full_cm:
-        return 100
-
-    fill_ratio = (effective_empty_cm - distance_cm) / span
+    fill_ratio = (empty_cm - distance_cm) / span
     fill_ratio = _clamp(fill_ratio, 0.0, 1.0)
-    if gamma > 0:
-        fill_ratio = fill_ratio ** gamma
-    return int(round(fill_ratio * 100))
+    return int(fill_ratio * 100)
 
 
 def estimate_coin_level(
