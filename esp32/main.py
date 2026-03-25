@@ -49,6 +49,9 @@ try:
     HAS_ULTRASONIC = True
 except ImportError:
     HAS_ULTRASONIC = False
+except Exception as exc:
+    print("[ULTRASONIC] module import failed:", exc)
+    HAS_ULTRASONIC = False
 
 
 # Timing config.
@@ -183,9 +186,31 @@ def run():
     # System now uses locked RFID UIDs only. No dynamic enrollment.
 
     def on_mqtt_command(topic, payload):
-        # NOTE: rfid_enroll_mode command is ignored (enrollment disabled)
+        nonlocal is_locked, unlock_started_ms
         try:
-            pass
+            action = None
+            if isinstance(payload, dict):
+                action = payload.get("action") or payload.get("cmd")
+
+            if action == "reset_data":
+                coins.reset()
+                coins.suppress_for(COIN_NOISE_GUARD_MS)
+                lock.lock()
+                is_locked = True
+                unlock_started_ms = None
+
+                mqtt.publish({
+                    "coins": coins.snapshot(),
+                    "total": coins.total(),
+                    "distance_cm": distance_cm,
+                    "is_full": full_flag,
+                    "is_locked": is_locked,
+                    "wifi_connected": is_connected(wlan),
+                    "estimated_total": estimated_total,
+                    "estimated_coin_count": estimated_coin_count,
+                    "fill_percent": fill_percent,
+                })
+                print("[RESET] Data reset command applied on board")
         except Exception as exc:
             print(f"[MQTT CMD ERROR] {exc}")
 

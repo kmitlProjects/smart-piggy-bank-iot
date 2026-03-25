@@ -16,6 +16,7 @@ from db import (
     reset_database,
 )
 from mqtt_subscriber import MQTTIngestService
+from mqtt_commands import publish_reset_command
 
 
 mqtt_service = MQTTIngestService()
@@ -118,8 +119,12 @@ def create_app() -> Flask:
     @app.post("/api/reset")
     def reset():
         payload = request.get_json(silent=True) or {}
+        device_id = payload.get("device_id", "esp32")
+        sent = publish_reset_command(device_id=device_id)
+        if not sent:
+            return jsonify({"error": "failed to send reset command to device"}), 503
         result = reset_database(clear_cards=False)  # Never clear locked RFID list
-        return jsonify({"reset": result})
+        return jsonify({"reset": result, "command_sent": True, "device_id": device_id})
 
     # NOTE: /api/rfid/enroll-mode endpoint removed (enrollment disabled)
 

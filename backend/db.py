@@ -481,16 +481,29 @@ def get_coin_summary() -> Dict[str, Any]:
         row = conn.execute(
             """
             SELECT
-                COALESCE(MAX(coin_1), 0) AS coin_1,
-                COALESCE(MAX(coin_2), 0) AS coin_2,
-                COALESCE(MAX(coin_5), 0) AS coin_5,
-                COALESCE(MAX(coin_10), 0) AS coin_10,
-                COALESCE(MAX(total), 0) AS total,
-                COALESCE(COUNT(*), 0) AS events
+                coin_1,
+                coin_2,
+                coin_5,
+                coin_10,
+                total
             FROM coin_events
+            ORDER BY id DESC
+            LIMIT 1
             """
         ).fetchone()
-        return _to_dict(row)
+        if row:
+            data = _to_dict(row)
+            data["events"] = conn.execute("SELECT COUNT(*) AS c FROM coin_events").fetchone()["c"]
+            return data
+
+        return {
+            "coin_1": 0,
+            "coin_2": 0,
+            "coin_5": 0,
+            "coin_10": 0,
+            "total": 0,
+            "events": 0,
+        }
     finally:
         conn.close()
 
