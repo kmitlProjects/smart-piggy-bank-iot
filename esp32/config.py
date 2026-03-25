@@ -17,7 +17,7 @@ MQTT_TOPIC_SUBSCRIBE = "piggybank/command"
 
 # Backend API config (for authorization checks)
 BACKEND_HOST = "Chanwits-MacBook-Pro.local"  # Same host as MQTT broker
-BACKEND_PORT = 5001  # ✅ Must match config.shared.py (API_PORT)
+BACKEND_PORT = 5001  # Must match backend API_PORT in docker-compose/backend config
 
 # Closed RFID whitelist (offline fallback): only these 2 UIDs are allowed.
 LOCKED_RFID_UIDS = [
