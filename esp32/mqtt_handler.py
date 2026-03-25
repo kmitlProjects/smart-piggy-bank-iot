@@ -17,12 +17,30 @@ class MQTTHandler:
         self.connected = False
         self.last_reconnect_ms = 0
         self.reconnect_cooldown_ms = 5000  # Wait 5s before retry
+        self.message_handler = None
+
+    def set_message_handler(self, handler):
+        self.message_handler = handler
+
+    def _on_message(self, topic, msg):
+        try:
+            topic_text = topic.decode() if isinstance(topic, bytes) else str(topic)
+            payload_text = msg.decode() if isinstance(msg, bytes) else str(msg)
+            payload = json.loads(payload_text)
+            if self.message_handler:
+                self.message_handler(topic_text, payload)
+        except Exception as e:
+            print(f"MQTT callback failed: {e}")
 
     def connect(self):
         """Connect to MQTT broker"""
         try:
             self.client = MQTTClient(self.client_id, self.broker)
+            self.client.set_callback(self._on_message)
             self.client.connect()
+            if self.topic_sub:
+                self.client.subscribe(self.topic_sub)
+                print(f"MQTT subscribed to {self.topic_sub}")
             self.connected = True
             self.last_reconnect_ms = time.ticks_ms()
             print(f"MQTT connected to {self.broker}")
