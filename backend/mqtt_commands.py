@@ -1,4 +1,5 @@
 import json
+import time
 
 from paho.mqtt import publish
 
@@ -12,13 +13,19 @@ def publish_reset_command(device_id: str = "esp32") -> bool:
     }
 
     try:
-        publish.single(
-            MQTT_TOPIC_COMMAND,
-            payload=json.dumps(payload),
-            hostname=MQTT_BROKER,
-            port=MQTT_PORT,
-            retain=False,
-        )
+        # Send a few times with QoS1 to reduce chance of losing a one-shot command.
+        body = json.dumps(payload)
+        for i in range(3):
+            publish.single(
+                MQTT_TOPIC_COMMAND,
+                payload=body,
+                hostname=MQTT_BROKER,
+                port=MQTT_PORT,
+                qos=1,
+                retain=False,
+            )
+            if i < 2:
+                time.sleep(0.2)
         return True
     except Exception as exc:
         print(f"[MQTT COMMAND] publish reset failed: {exc}")
