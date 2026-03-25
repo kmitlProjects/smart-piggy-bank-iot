@@ -14,3 +14,7 @@ WIFI_PASSWORD = "neae4850"
 MQTT_BROKER = "Chanwits-MacBook-Pro.local"
 MQTT_TOPIC_PUBLISH = "piggybank/data"
 MQTT_TOPIC_SUBSCRIBE = "piggybank/command"
+
+# Backend API config (for authorization checks)
+BACKEND_HOST = "Chanwits-MacBook-Pro.local"  # Same host as MQTT broker
+BACKEND_PORT = 5000  # Change to 5001 if running test on different port
