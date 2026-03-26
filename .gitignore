@@ -8,3 +8,6 @@ backend/data/*.db
 # Environment
 .env
 .env.local
+
+# WebREPL upload cache
+tools/.webrepl_last_host
