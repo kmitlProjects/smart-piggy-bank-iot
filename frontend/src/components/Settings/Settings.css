@@ -1,0 +1,337 @@
+/* Settings Page Styles */
+.settings-root {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top right, rgba(15, 118, 110, 0.08), transparent 24%),
+    #f4f7f8;
+}
+
+.settings-page {
+  margin-left: var(--dashboard-sidebar-width);
+  padding: 32px clamp(16px, 3vw, 40px) 40px;
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-family: 'Sarabun', sans-serif;
+  font-weight: 800;
+  font-size: 30px;
+  color: #181c1f;
+  letter-spacing: -0.75px;
+}
+
+.settings-desc {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  color: #3e4947;
+  max-width: 720px;
+}
+
+.settings-banner {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-banner.is-success {
+  background: rgba(15, 118, 110, 0.1);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  color: #0f766e;
+}
+
+.settings-banner.is-error {
+  background: rgba(186, 26, 26, 0.08);
+  border: 1px solid rgba(186, 26, 26, 0.18);
+  color: #8c1d18;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.settings-card {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 18px 40px -32px rgba(15, 23, 42, 0.2);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-card-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-card-danger {
+  background: rgba(255, 218, 214, 0.24);
+  border: 1px solid rgba(186, 26, 26, 0.1);
+}
+
+.settings-card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  color: #181c1f;
+}
+
+.settings-card-title.danger {
+  color: #93000a;
+}
+
+.settings-card-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.settings-card-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.settings-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e7977;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.settings-input,
+.settings-textbox {
+  width: 100%;
+  background: #f1f4f8;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  color: #181c1f;
+}
+
+.settings-textbox:focus {
+  outline: none;
+  border-color: rgba(15, 118, 110, 0.28);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.settings-btn {
+  width: 100%;
+  min-height: 48px;
+  background: linear-gradient(90deg, #005c55 0%, #0f766e 100%);
+  border-radius: 12px;
+  border: none;
+  color: #fff;
+  font-family: 'Manrope', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.settings-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.settings-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-btn.danger {
+  background: #ba1a1a;
+}
+
+.settings-btn.unlock {
+  background: linear-gradient(104.04deg, #005c55 0%, #0f766e 100%);
+}
+
+.settings-btn.unlocked {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.settings-btn.small {
+  width: auto;
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.settings-btn.secondary {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+}
+
+.settings-interval-value {
+  margin-left: auto;
+  font-family: 'Manrope', sans-serif;
+  font-size: 16px;
+  color: #005c55;
+}
+
+.settings-interval-desc,
+.settings-note,
+.settings-danger-desc,
+.settings-scan-meta {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #3e4947;
+}
+
+.settings-enroll-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: rgba(100, 116, 139, 0.08);
+}
+
+.settings-enroll-panel.is-active {
+  background: rgba(15, 118, 110, 0.1);
+}
+
+.settings-enroll-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-enroll-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #181c1f;
+}
+
+.settings-enroll-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #52606d;
+}
+
+.settings-scan-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-card-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-empty {
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(241, 244, 248, 0.8);
+  color: #52606d;
+  font-size: 14px;
+}
+
+.settings-card-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(241, 244, 248, 0.8);
+}
+
+.settings-card-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-card-row-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #181c1f;
+}
+
+.settings-card-row-subtitle {
+  font-size: 13px;
+  color: #52606d;
+  word-break: break-all;
+}
+
+.settings-card-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.settings-unlock-section {
+  align-self: start;
+}
+
+@media (max-width: 1180px) {
+  .settings-page {
+    margin-left: var(--dashboard-sidebar-width);
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .settings-page {
+    margin-left: 0;
+    padding: 20px 16px 112px;
+  }
+
+  .settings-card-fields,
+  .settings-card-form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-enroll-panel,
+  .settings-card-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-card-row-actions {
+    justify-content: flex-start;
+  }
+}

@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 
-const POLL_INTERVAL_MS = 3000;
+const DEFAULT_POLL_INTERVAL_SEC = 5;
+const REFRESH_INTERVAL_STORAGE_KEY = 'smart-piggy-refresh-interval-sec';
+
+function getPollIntervalMs() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_POLL_INTERVAL_SEC * 1000;
+  }
+
+  const rawValue = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
+  const safeSeconds = Number.isFinite(rawValue)
+    ? Math.max(1, Math.min(10, rawValue))
+    : DEFAULT_POLL_INTERVAL_SEC;
+
+  return safeSeconds * 1000;
+}
 
 async function fetchJson(path, options = {}) {
   const controller = new AbortController();
@@ -134,7 +148,7 @@ export default function useDashboardData() {
 
     pollingRef.current = setInterval(() => {
       refresh();
-    }, POLL_INTERVAL_MS);
+    }, getPollIntervalMs());
 
     return () => {
       mountedRef.current = false;

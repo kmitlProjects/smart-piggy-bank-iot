@@ -20,7 +20,7 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(parsed)));
 }
 
-const Dashboard = () => {
+const Dashboard = ({ onNavigate }) => {
   const {
     loading,
     error,
@@ -55,7 +55,7 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard-root">
-      <Sidebar active="dashboard" />
+      <Sidebar active="dashboard" onNavigate={onNavigate} />
       <main className="dashboard-main">
         <Topbar wifi={wifi} locked={locked} lastSeenAt={safeStatus.last_seen_at} />
         <div className="dashboard-content">
