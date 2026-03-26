@@ -21,9 +21,9 @@ if [[ $# -eq 3 ]]; then
   PREFERRED_IP="$3"
 fi
 PY="python3"
-CLI="tools/webrepl_cli.py"
-FINDER="tools/find_webrepl_host.py"
-CACHE_FILE="tools/.webrepl_last_host"
+CLI="./webrepl_cli.py"
+FINDER="./find_webrepl_host.py"
+CACHE_FILE=".webrepl_last_host"
 MDNS_HOSTNAME="esp32.local"
 FIND_TIMEOUT="0.5"
 
@@ -59,8 +59,8 @@ if [[ ! -f "$FINDER" ]]; then
   exit 1
 fi
 
-if [[ ! -d "esp32" ]]; then
-  echo "Error: esp32 directory not found"
+if [[ ! -d "../esp32" ]]; then
+  echo "Error: ../esp32 directory not found"
   exit 1
 fi
 
@@ -100,16 +100,18 @@ if [[ "$HOST" == "auto" ]]; then
   echo "Auto-discovered host: $HOST"
 fi
 
-echo "Uploading esp32/*.py to $HOST ..."
-for f in esp32/*.py; do
+echo "Uploading esp32/lib/*.py to $HOST ..."
+
+echo "Uploading ../esp32/*.py to $HOST ..."
+for f in ../esp32/*.py; do
   [[ -f "$f" ]] || continue
   dst="${HOST}:/$(basename "$f")"
   echo "  $f -> $dst"
   upload_with_retry "$f" "$dst"
 done
 
-echo "Uploading esp32/lib/*.py to $HOST ..."
-for f in esp32/lib/*.py; do
+echo "Uploading ../esp32/lib/*.py to $HOST ..."
+for f in ../esp32/lib/*.py; do
   [[ -f "$f" ]] || continue
   dst="${HOST}:/lib/$(basename "$f")"
   echo "  $f -> $dst"

@@ -131,10 +131,11 @@ def run():
     reader = init_rfid()
     oled = init_display()
     device_ip = None
+    enroll_mode = False
 
     # ===== WEB STATUS FUNCTION =====
-    def get_status():
-        return {
+    def current_payload(heartbeat_reason="HEARTBEAT", rfid_scan_uid=None, rfid_scan_source=None):
+        payload = {
             "coins": coins.snapshot(),
             "total": coins.total(),
             "distance_cm": distance_cm,
@@ -144,7 +145,18 @@ def run():
             "estimated_total": estimated_total,
             "estimated_coin_count": estimated_coin_count,
             "fill_percent": fill_percent,
+            "wifi_ssid": WIFI_SSID,
+            "esp32_ip": device_ip,
+            "heartbeat_reason": heartbeat_reason,
         }
+        if rfid_scan_uid is not None:
+            payload["rfid_scan_uid"] = str(rfid_scan_uid)
+        if rfid_scan_source is not None:
+            payload["rfid_scan_source"] = rfid_scan_source
+        return payload
+
+    def get_status():
+        return current_payload()
 
 
     safe_show_boot_screen(oled, ip_text=device_ip)
@@ -182,11 +194,8 @@ def run():
         client_id="piggybank_esp32"
     )
 
-    # NOTE: RFID enrollment mode has been removed.
-    # System now uses locked RFID UIDs only. No dynamic enrollment.
-
     def on_mqtt_command(topic, payload):
-        nonlocal is_locked, unlock_started_ms
+        nonlocal enroll_mode, is_locked, unlock_started_ms
         try:
             action = None
             if isinstance(payload, dict):
@@ -199,17 +208,7 @@ def run():
                 is_locked = True
                 unlock_started_ms = None
 
-                mqtt.publish({
-                    "coins": coins.snapshot(),
-                    "total": coins.total(),
-                    "distance_cm": distance_cm,
-                    "is_full": full_flag,
-                    "is_locked": is_locked,
-                    "wifi_connected": is_connected(wlan),
-                    "estimated_total": estimated_total,
-                    "estimated_coin_count": estimated_coin_count,
-                    "fill_percent": fill_percent,
-                })
+                mqtt.publish(current_payload(heartbeat_reason="RESET"))
                 print("[RESET] Data reset command applied on board")
 
             elif action == "unlock_once":
@@ -232,18 +231,21 @@ def run():
                 pulse_output(led)
                 pulse_output(buzzer)
 
-                mqtt.publish({
-                    "coins": coins.snapshot(),
-                    "total": coins.total(),
-                    "distance_cm": distance_cm,
-                    "is_full": full_flag,
-                    "is_locked": is_locked,
-                    "wifi_connected": is_connected(wlan),
-                    "estimated_total": estimated_total,
-                    "estimated_coin_count": estimated_coin_count,
-                    "fill_percent": fill_percent,
-                })
+                mqtt.publish(current_payload(heartbeat_reason="WEB_UNLOCK"))
                 print("[UNLOCK] Unlock command applied from web")
+
+            elif action == "rfid_enroll_mode":
+                enabled = False
+                if isinstance(payload, dict):
+                    enabled = bool(payload.get("enabled", False))
+
+                enroll_mode = enabled
+                lock.lock()
+                is_locked = True
+                unlock_started_ms = None
+                coins.suppress_for(COIN_NOISE_GUARD_MS)
+                mqtt.publish(current_payload(heartbeat_reason="ENROLL_MODE_ON" if enabled else "ENROLL_MODE_OFF"))
+                print("[RFID ENROLL MODE]", "enabled" if enabled else "disabled")
         except Exception as exc:
             print(f"[MQTT CMD ERROR] {exc}")
 
@@ -276,6 +278,20 @@ def run():
                     last_card_ms = now
                     last_rfid_ok_ms = now
                     coins.suppress_for(COIN_NOISE_GUARD_MS)
+
+                    if enroll_mode:
+                        print(f"[ENROLL] Card UID captured: {uid}")
+                        pulse_output(led, 80)
+                        time.sleep_ms(60)
+                        pulse_output(led, 80)
+                        mqtt.publish(
+                            current_payload(
+                                heartbeat_reason="RFID_ENROLL_SCAN",
+                                rfid_scan_uid=uid,
+                                rfid_scan_source="esp32_enroll",
+                            )
+                        )
+                        continue
 
                     # RFID card detected - authorize first, then unlock only if allowed.
                     wifi_status = is_connected(wlan)
@@ -395,17 +411,7 @@ def run():
         # Publish to MQTT every DASHBOARD_UPDATE_MS
         if time.ticks_diff(now, last_mqtt_publish_ms) >= DASHBOARD_UPDATE_MS:
             last_mqtt_publish_ms = now
-            payload = {
-                "coins": coins.snapshot(),
-                "total": coins.total(),
-                "distance_cm": distance_cm,
-                "is_full": full_flag,
-                "is_locked": is_locked,
-                "wifi_connected": is_connected(wlan),
-                "estimated_total": estimated_total,
-                "estimated_coin_count": estimated_coin_count,
-                "fill_percent": fill_percent,
-            }
+            payload = current_payload(heartbeat_reason="PERIODIC")
             sent = mqtt.publish(payload)
             if not sent:
                 print("MQTT: publish failed")

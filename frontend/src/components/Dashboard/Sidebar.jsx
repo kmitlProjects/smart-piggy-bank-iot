@@ -1,7 +1,7 @@
 import React from 'react';
 import './Sidebar.css';
 
-const Sidebar = ({ active }) => {
+const Sidebar = ({ active, onNavigate }) => {
   const logo = '/logo/logo.svg';
   const dashboardIcon = '/icon/gen/sectionTabMenu/IconDashboad.svg';
   const statisticsIcon = '/icon/gen/sectionTabMenu/IconStatistics.svg';
@@ -24,6 +24,7 @@ const Sidebar = ({ active }) => {
             type="button"
             className={`sidebar-link${active === item.id ? ' active' : ''}`}
             aria-current={active === item.id ? 'page' : undefined}
+            onClick={() => onNavigate && onNavigate(item.id)}
           >
             <img src={item.icon} alt={item.label} />
             <span>{item.label}</span>

@@ -44,3 +44,11 @@ def publish_unlock_command(device_id: str = "esp32", duration_ms: int = 5000) ->
         "device_id": device_id,
         "duration_ms": int(duration_ms),
     })
+
+
+def publish_rfid_enroll_command(device_id: str = "esp32", enabled: bool = False) -> bool:
+    return _publish_command({
+        "action": "rfid_enroll_mode",
+        "device_id": device_id,
+        "enabled": bool(enabled),
+    })

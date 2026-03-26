@@ -4,7 +4,13 @@ import threading
 import paho.mqtt.client as mqtt
 
 from config import MQTT_BROKER, MQTT_CLIENT_ID, MQTT_PORT, MQTT_TOPIC_DATA
-from db import insert_coin_event, mark_device_seen, upsert_latest_status
+from db import (
+    insert_coin_event,
+    mark_device_seen,
+    record_rfid_scan,
+    upsert_device_runtime,
+    upsert_latest_status,
+)
 
 
 class MQTTIngestService:
@@ -26,9 +32,15 @@ class MQTTIngestService:
     def on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
-            insert_coin_event(payload, source="mqtt", device_id="esp32")
-            upsert_latest_status(payload, device_id="esp32")
-            mark_device_seen(device_id="esp32", reason="HEARTBEAT")
+            if payload.get("rfid_scan_uid") is not None:
+                record_rfid_scan(payload["rfid_scan_uid"], source=payload.get("rfid_scan_source", "esp32_enroll"))
+
+            upsert_device_runtime(payload, device_id="esp32")
+
+            if any(key in payload for key in ("coins", "total", "distance_cm", "is_locked", "fill_percent")):
+                insert_coin_event(payload, source="mqtt", device_id="esp32")
+                upsert_latest_status(payload, device_id="esp32")
+                mark_device_seen(device_id="esp32", reason=payload.get("heartbeat_reason", "HEARTBEAT"))
             print("MQTT message stored")
         except Exception as exc:
             print(f"MQTT ingest failed: {exc}")

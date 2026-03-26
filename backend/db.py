@@ -82,6 +82,29 @@ CREATE TABLE IF NOT EXISTS connectivity_events (
     timeout_seconds INTEGER,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS device_runtime (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    device_id TEXT,
+    wifi_ssid TEXT,
+    esp32_ip TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rfid_enrollment_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    active INTEGER NOT NULL DEFAULT 0,
+    pending_uid TEXT,
+    last_scanned_at TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rfid_scan_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -276,7 +299,168 @@ def get_connectivity_history(limit: int = 100, device_id: str = "esp32") -> List
         conn.close()
 
 
+def _uid_to_text(uid: Any) -> str:
+    if isinstance(uid, list):
+        return str(uid)
+
+    if uid is None:
+        return ""
+
+    return str(uid).strip()
+
+
+def upsert_device_runtime(payload: Dict[str, Any], device_id: str) -> None:
+    wifi_ssid = payload.get("wifi_ssid")
+    esp32_ip = payload.get("esp32_ip")
+
+    if wifi_ssid is None and esp32_ip is None:
+        return
+
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO device_runtime (id, device_id, wifi_ssid, esp32_ip, updated_at)
+            VALUES (1, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                device_id = excluded.device_id,
+                wifi_ssid = COALESCE(excluded.wifi_ssid, device_runtime.wifi_ssid),
+                esp32_ip = COALESCE(excluded.esp32_ip, device_runtime.esp32_ip),
+                updated_at = excluded.updated_at
+            """,
+            (device_id, wifi_ssid, esp32_ip, _now_iso()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_device_runtime() -> Dict[str, Any]:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT device_id, wifi_ssid, esp32_ip, updated_at FROM device_runtime WHERE id = 1"
+        ).fetchone()
+        return _to_dict(row) if row else {}
+    finally:
+        conn.close()
+
+
+def set_rfid_enrollment_state(active: bool, pending_uid: Optional[str] = None) -> Dict[str, Any]:
+    now = _now_iso()
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO rfid_enrollment_state (id, active, pending_uid, last_scanned_at, updated_at)
+            VALUES (1, ?, ?, NULL, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                active = excluded.active,
+                pending_uid = excluded.pending_uid,
+                last_scanned_at = CASE
+                    WHEN excluded.pending_uid IS NULL THEN NULL
+                    ELSE rfid_enrollment_state.last_scanned_at
+                END,
+                updated_at = excluded.updated_at
+            """,
+            (int(bool(active)), pending_uid, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT active, pending_uid, last_scanned_at, updated_at FROM rfid_enrollment_state WHERE id = 1"
+        ).fetchone()
+        data = _to_dict(row)
+        data["active"] = bool(data.get("active"))
+        return data
+    finally:
+        conn.close()
+
+
+def record_rfid_scan(uid: Any, source: str = "esp32_enroll") -> Dict[str, Any]:
+    uid_text = _uid_to_text(uid)
+    now = _now_iso()
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO rfid_scan_events (uid, source, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (uid_text, source, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO rfid_enrollment_state (id, active, pending_uid, last_scanned_at, updated_at)
+            VALUES (1, 1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                pending_uid = excluded.pending_uid,
+                last_scanned_at = excluded.last_scanned_at,
+                updated_at = excluded.updated_at
+            """,
+            (uid_text, now, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT active, pending_uid, last_scanned_at, updated_at FROM rfid_enrollment_state WHERE id = 1"
+        ).fetchone()
+        data = _to_dict(row)
+        data["active"] = bool(data.get("active"))
+        return data
+    finally:
+        conn.close()
+
+
+def clear_pending_rfid_scan() -> Dict[str, Any]:
+    now = _now_iso()
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO rfid_enrollment_state (id, active, pending_uid, last_scanned_at, updated_at)
+            VALUES (1, 0, NULL, NULL, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                pending_uid = NULL,
+                last_scanned_at = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (now,),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT active, pending_uid, last_scanned_at, updated_at FROM rfid_enrollment_state WHERE id = 1"
+        ).fetchone()
+        data = _to_dict(row)
+        data["active"] = bool(data.get("active"))
+        return data
+    finally:
+        conn.close()
+
+
+def get_rfid_enrollment_state() -> Dict[str, Any]:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT active, pending_uid, last_scanned_at, updated_at FROM rfid_enrollment_state WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return {
+                "active": False,
+                "pending_uid": None,
+                "last_scanned_at": None,
+                "updated_at": None,
+            }
+        data = _to_dict(row)
+        data["active"] = bool(data.get("active"))
+        return data
+    finally:
+        conn.close()
+
+
 def add_rfid_card(uid: str, owner_name: Optional[str] = None) -> Dict[str, Any]:
+    uid_text = _uid_to_text(uid)
+    if not uid_text:
+        raise ValueError("uid is required")
+
     now = _now_iso()
     conn = _conn()
     try:
@@ -288,70 +472,117 @@ def add_rfid_card(uid: str, owner_name: Optional[str] = None) -> Dict[str, Any]:
                 owner_name = excluded.owner_name,
                 is_active = 1
             """,
-            (uid, owner_name, now),
+            (uid_text, owner_name, now),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM rfid_cards WHERE uid = ?", (uid,)).fetchone()
+        row = conn.execute("SELECT * FROM rfid_cards WHERE uid = ?", (uid_text,)).fetchone()
         return _to_dict(row)
     finally:
         conn.close()
 
 
-def deactivate_rfid_card(uid: str) -> bool:
+def update_rfid_card(card_id: int, uid: str, owner_name: Optional[str] = None, is_active: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+    uid_text = _uid_to_text(uid)
+    if not uid_text:
+        raise ValueError("uid is required")
+
     conn = _conn()
     try:
-        cur = conn.execute("UPDATE rfid_cards SET is_active = 0 WHERE uid = ?", (uid,))
+        row = conn.execute("SELECT * FROM rfid_cards WHERE id = ?", (card_id,)).fetchone()
+        if row is None:
+            return None
+
+        active_value = row["is_active"] if is_active is None else int(bool(is_active))
+        conn.execute(
+            """
+            UPDATE rfid_cards
+            SET uid = ?, owner_name = ?, is_active = ?
+            WHERE id = ?
+            """,
+            (uid_text, owner_name, active_value, card_id),
+        )
+        conn.commit()
+        updated = conn.execute("SELECT * FROM rfid_cards WHERE id = ?", (card_id,)).fetchone()
+        return _to_dict(updated) if updated else None
+    finally:
+        conn.close()
+
+
+def deactivate_rfid_card(uid: str) -> bool:
+    uid_text = _uid_to_text(uid)
+    conn = _conn()
+    try:
+        cur = conn.execute("UPDATE rfid_cards SET is_active = 0 WHERE uid = ?", (uid_text,))
         conn.commit()
         return cur.rowcount > 0
     finally:
         conn.close()
 
 
-def list_rfid_cards() -> List[Dict[str, Any]]:
+def deactivate_rfid_card_by_id(card_id: int) -> bool:
     conn = _conn()
     try:
-        rows = conn.execute(
-            "SELECT id, uid, owner_name, is_active, created_at FROM rfid_cards ORDER BY id DESC"
-        ).fetchall()
+        cur = conn.execute("UPDATE rfid_cards SET is_active = 0 WHERE id = ?", (card_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_rfid_cards(active_only: bool = False) -> List[Dict[str, Any]]:
+    conn = _conn()
+    try:
+        if active_only:
+            rows = conn.execute(
+                """
+                SELECT id, uid, owner_name, is_active, created_at
+                FROM rfid_cards
+                WHERE is_active = 1
+                ORDER BY id DESC
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, uid, owner_name, is_active, created_at FROM rfid_cards ORDER BY id DESC"
+            ).fetchall()
         return [_to_dict(r) for r in rows]
     finally:
         conn.close()
 
 
 def is_card_authorized(uid: Any) -> bool:
-    """
-    Check if RFID card is authorized using LOCKED_RFID_UIDS (hardcoded closed/locked list).
-    NOTE: Dynamic enrollment has been disabled. System is CLOSED - only 2 UIDs allowed.
-    
-    Args:
-        uid: RFID card UID (format: list [182, 188, 21, 6, 25] or string representation)
-    
-    Returns:
-        True if UID matches one of 2 allowed UIDs, False otherwise
-    """
-    from config import LOCKED_RFID_UIDS
-    
-    # Handle both list and string formats
+    uid_text = _uid_to_text(uid)
+    conn = _conn()
     try:
-        # If uid is a string representation of list, parse it
+        active_count_row = conn.execute(
+            "SELECT COUNT(*) AS c FROM rfid_cards WHERE is_active = 1"
+        ).fetchone()
+        row = conn.execute(
+            "SELECT 1 FROM rfid_cards WHERE uid = ? AND is_active = 1 LIMIT 1",
+            (uid_text,),
+        ).fetchone()
+        active_count = active_count_row["c"] if active_count_row is not None else 0
+        if active_count > 0:
+            return row is not None
+        if row is not None:
+            return True
+    finally:
+        conn.close()
+
+    from config import LOCKED_RFID_UIDS
+
+    try:
         if isinstance(uid, str) and uid.startswith('['):
             import ast
             uid = ast.literal_eval(uid)
     except:
         pass
-    
-    # Check against locked UIDs
+
     for allowed_uid in LOCKED_RFID_UIDS:
         if uid == allowed_uid:
             return True
-    
+
     return False
-
-
-def _uid_to_text(uid: Any) -> str:
-    if isinstance(uid, list):
-        return str(uid)
-    return "" if uid is None else str(uid)
 
 
 def log_access(uid: Any, wifi_connected: bool, authorized: bool, access_granted: bool, reason: str) -> None:
@@ -545,6 +776,9 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
         deleted_coin_events = conn.execute("DELETE FROM coin_events").rowcount
         deleted_access_logs = conn.execute("DELETE FROM access_logs").rowcount
         deleted_status = conn.execute("DELETE FROM latest_status").rowcount
+        deleted_device_runtime = conn.execute("DELETE FROM device_runtime").rowcount
+        deleted_enrollment_state = conn.execute("DELETE FROM rfid_enrollment_state").rowcount
+        deleted_scan_events = conn.execute("DELETE FROM rfid_scan_events").rowcount
         deleted_connectivity_state = conn.execute("DELETE FROM connectivity_state").rowcount
         deleted_connectivity_events = conn.execute("DELETE FROM connectivity_events").rowcount
         deleted_cards = 0
@@ -555,6 +789,9 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
             "coin_events": deleted_coin_events,
             "access_logs": deleted_access_logs,
             "latest_status": deleted_status,
+            "device_runtime": deleted_device_runtime,
+            "rfid_enrollment_state": deleted_enrollment_state,
+            "rfid_scan_events": deleted_scan_events,
             "connectivity_state": deleted_connectivity_state,
             "connectivity_events": deleted_connectivity_events,
             "rfid_cards": deleted_cards,
