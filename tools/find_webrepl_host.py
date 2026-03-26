@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import socket
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -27,6 +28,52 @@ def is_port_open(ip: str, port: int, timeout: float) -> bool:
         return False
     finally:
         sock.close()
+
+
+def is_ipv4(text: str) -> bool:
+    parts = text.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return False
+    return all(0 <= n <= 255 for n in nums)
+
+
+def dedupe_keep_order(items: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def read_cached_ip(cache_file: str | None) -> str | None:
+    if not cache_file:
+        return None
+    try:
+        path = Path(cache_file)
+        if not path.exists():
+            return None
+        text = path.read_text(encoding="utf-8").strip()
+        if is_ipv4(text):
+            return text
+    except Exception:
+        return None
+    return None
+
+
+def resolve_hostname(hostname: str) -> str | None:
+    try:
+        ip = socket.gethostbyname(hostname)
+        if is_ipv4(ip):
+            return ip
+    except Exception:
+        return None
+    return None
 
 
 def scan_webrepl_hosts(local_ip: str, timeout: float) -> list[str]:
@@ -67,6 +114,9 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=0.2, help="Per-host TCP timeout in seconds")
     parser.add_argument("--local-ip", action="store_true", help="Print only local IPv4 and exit")
     parser.add_argument("--print-network", action="store_true", help="Print local IP and subnet to stderr")
+    parser.add_argument("--hostname", default="esp32.local", help="mDNS hostname to resolve first")
+    parser.add_argument("--cache-file", help="Path to file containing last known IPv4")
+    parser.add_argument("--prefer-ip", action="append", default=[], help="Preferred IPv4 to probe first")
     args = parser.parse_args()
 
     local_ip = get_local_ip()
@@ -78,7 +128,33 @@ def main() -> int:
     if args.print_network:
         print(f"[local] ip={local_ip} subnet={local_subnet(local_ip)}", file=sys.stderr)
 
+    preferred_candidates: list[str] = []
+    for item in args.prefer_ip:
+        if is_ipv4(item):
+            preferred_candidates.append(item)
+
+    cached_ip = read_cached_ip(args.cache_file)
+    if cached_ip:
+        preferred_candidates.append(cached_ip)
+
+    if args.hostname:
+        resolved = resolve_hostname(args.hostname)
+        if resolved:
+            preferred_candidates.append(resolved)
+
+    preferred_candidates = dedupe_keep_order(preferred_candidates)
+
+    quick_hits: list[str] = []
+    for ip in preferred_candidates:
+        if is_port_open(ip, 8266, max(args.timeout, 0.35)):
+            quick_hits.append(ip)
+
+    if args.first and quick_hits:
+        print(quick_hits[0])
+        return 0
+
     hosts = scan_webrepl_hosts(local_ip, args.timeout)
+    hosts = dedupe_keep_order(quick_hits + hosts)
 
     if not hosts:
         return 1
