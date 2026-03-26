@@ -21,6 +21,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isResetting, setIsResetting] = useState(false)
+  const [isUnlocking, setIsUnlocking] = useState(false)
 
   const coins = useMemo(
     () => ({
@@ -32,12 +33,21 @@ function App() {
     [summary]
   )
 
-  const fetchJson = async (path, options) => {
-    const response = await fetch(`${API_BASE}${path}`, options)
-    if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`)
+  const fetchJson = async (path, options = {}) => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 7000)
+    try {
+      const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        signal: controller.signal,
+      })
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`)
+      }
+      return response.json()
+    } finally {
+      clearTimeout(timeout)
     }
-    return response.json()
   }
 
   const refreshData = async (showLoading = false) => {
@@ -94,6 +104,23 @@ function App() {
     }
   }
 
+  const handleUnlock = async () => {
+    setIsUnlocking(true)
+    setError('')
+    try {
+      await fetchJson('/api/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: 'esp32', duration_ms: 5000 }),
+      })
+      await refreshData(false)
+    } catch (err) {
+      setError(err.message || 'Unlock failed')
+    } finally {
+      setIsUnlocking(false)
+    }
+  }
+
   // NOTE: RFID enrollment functions have been removed.
   // System now uses locked RFID UIDs (hardcoded whitelist on backend).
   const handleDeleteCard = async (uid) => {
@@ -116,10 +143,13 @@ function App() {
       <p className="subtitle">Backend API: {API_BASE || '/api (vite proxy)'}</p>
 
       <div className="toolbar">
-        <button className="primary-btn" onClick={() => refreshData(false)} disabled={loading || isResetting}>
-          Refresh
+        <button className="primary-btn" onClick={() => refreshData(true)} disabled={isResetting || isUnlocking}>
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
-        <button className="danger-btn" onClick={handleReset} disabled={loading || isResetting}>
+        <button className="primary-btn" onClick={handleUnlock} disabled={isResetting || isUnlocking}>
+          {isUnlocking ? 'Unlocking...' : 'Unlock via Web'}
+        </button>
+        <button className="danger-btn" onClick={handleReset} disabled={isResetting || isUnlocking}>
           {isResetting ? 'Resetting...' : 'Reset Data'}
         </button>
       </div>
