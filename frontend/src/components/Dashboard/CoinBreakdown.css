@@ -1,0 +1,105 @@
+/* Coin Breakdown Styles */
+.coin-breakdown-root {
+  width: 100%;
+  margin-top: 32px;
+}
+
+.coin-breakdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.coin-breakdown-header span {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  color: #181c1f;
+}
+
+.coin-breakdown-history {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #005c55;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.coin-breakdown-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.coin-card {
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  width: auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px;
+  border-bottom: 4px solid rgba(0, 92, 85, 0.1);
+}
+
+.coin-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.coin-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.coin-card-unit {
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.coin-card-amount {
+  font-family: 'Sarabun', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #181c1f;
+  margin-top: 16px;
+}
+
+.coin-card-count {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+@media (max-width: 1180px) {
+  .coin-breakdown-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .coin-breakdown-cards {
+    grid-template-columns: 1fr;
+  }
+}

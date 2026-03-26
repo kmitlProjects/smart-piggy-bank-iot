@@ -1,0 +1,133 @@
+/* Topbar Styles */
+.topbar-root {
+  position: sticky;
+  top: 0;
+  min-height: 76px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px clamp(16px, 3vw, 40px);
+  z-index: 30;
+}
+
+.topbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.topbar-title {
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  color: #115e59;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9999px;
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.topbar-status.is-online {
+  background: #83f5c6;
+  color: #007151;
+}
+
+.topbar-status.is-offline {
+  background: rgba(186, 26, 26, 0.12);
+  color: #ba1a1a;
+}
+
+.topbar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.topbar-status.is-online .topbar-dot {
+  background: #006c4e;
+}
+
+.topbar-status.is-offline .topbar-dot {
+  background: #ba1a1a;
+}
+
+.topbar-meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.topbar-icons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.topbar-icon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.topbar-icon-chip.is-online {
+  background: rgba(15, 118, 110, 0.1);
+  color: #0f766e;
+}
+
+.topbar-icon-chip.is-offline {
+  background: rgba(186, 26, 26, 0.12);
+  color: #ba1a1a;
+}
+
+.topbar-icon-chip.is-locked {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+}
+
+.topbar-icon-chip.is-unlocked {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.topbar-icon-chip img {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 767px) {
+  .topbar-root {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .topbar-title-group,
+  .topbar-icons {
+    width: 100%;
+  }
+
+  .topbar-icons {
+    justify-content: space-between;
+  }
+}
