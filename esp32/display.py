@@ -13,6 +13,13 @@ except ImportError:
 SDA_PIN = 8
 SCL_PIN = 9
 I2C_FREQ = 400000
+MAX_TEXT_CHARS = 16  # 128px / 8px default font
+SCROLL_GAP = "   "
+
+_scroll_state = {
+    "text": None,
+    "index": 0,
+}
 
 
 def init_display(width=128, height=64):
@@ -29,6 +36,31 @@ def init_display(width=128, height=64):
         return None
 
     return ssd1306.SSD1306_I2C(width, height, i2c, addr=oled_addr)
+
+
+def _draw_bottom_text(oled, text, y=56):
+    if text is None:
+        text = ""
+    text = str(text)
+
+    if len(text) <= MAX_TEXT_CHARS:
+        _scroll_state["text"] = text
+        _scroll_state["index"] = 0
+        oled.text(text, 0, y)
+        return
+
+    if _scroll_state["text"] != text:
+        _scroll_state["text"] = text
+        _scroll_state["index"] = 0
+
+    loop_text = text + SCROLL_GAP + text
+    idx = _scroll_state["index"]
+    window = loop_text[idx:idx + MAX_TEXT_CHARS]
+    if len(window) < MAX_TEXT_CHARS:
+        window = window + loop_text[: MAX_TEXT_CHARS - len(window)]
+
+    oled.text(window, 0, y)
+    _scroll_state["index"] = (idx + 1) % (len(text) + len(SCROLL_GAP))
 
 
 def render_status(oled, counts, total, is_full, estimated_total=None, fill_percent=None, ip_text=None):
@@ -53,9 +85,11 @@ def render_status(oled, counts, total, is_full, estimated_total=None, fill_perce
         oled.text("F=" + str(fill_percent) + "%", 64, 34)
 
     if ip_text is None or ip_text == "":
-        oled.text("WiFi Lost", 0, 56)
+        bottom_text = "WiFi Lost"
     else:
-        oled.text("IP:" + str(ip_text), 0, 56)
+        bottom_text = str(ip_text)
+
+    _draw_bottom_text(oled, bottom_text, y=56)
 
     if is_full:
         oled.text("!", 120, 34)
@@ -70,7 +104,8 @@ def show_boot_screen(oled, ip_text=None):
     oled.text("Smart Piggy Bank", 0, 0)
     oled.text("System Ready", 0, 20)
     if ip_text is None or ip_text == "":
-        oled.text("WiFi Lost", 0, 56)
+        bottom_text = "WiFi Lost"
     else:
-        oled.text("IP:" + str(ip_text), 0, 56)
+        bottom_text = str(ip_text)
+    _draw_bottom_text(oled, bottom_text, y=56)
     oled.show()
