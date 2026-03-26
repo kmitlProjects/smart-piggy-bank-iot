@@ -18,7 +18,7 @@ from db import (
     reset_database,
 )
 from mqtt_subscriber import MQTTIngestService
-from mqtt_commands import publish_reset_command
+from mqtt_commands import publish_reset_command, publish_unlock_command
 
 
 mqtt_service = MQTTIngestService()
@@ -143,6 +143,27 @@ def create_app() -> Flask:
             "reset": result,
             "command_sent": True,
             "device_id": device_id,
+            "instance": _instance_info(),
+        })
+
+    @app.post("/api/unlock")
+    def unlock():
+        payload = request.get_json(silent=True) or {}
+        device_id = payload.get("device_id", "esp32")
+        duration_ms = int(payload.get("duration_ms", 5000))
+
+        sent = publish_unlock_command(device_id=device_id, duration_ms=duration_ms)
+        if not sent:
+            return jsonify({
+                "error": "failed to send unlock command to device",
+                "instance": _instance_info(),
+            }), 503
+
+        return jsonify({
+            "unlock": "requested",
+            "command_sent": True,
+            "device_id": device_id,
+            "duration_ms": duration_ms,
             "instance": _instance_info(),
         })
 

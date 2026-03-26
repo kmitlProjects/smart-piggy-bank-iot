@@ -211,6 +211,39 @@ def run():
                     "fill_percent": fill_percent,
                 })
                 print("[RESET] Data reset command applied on board")
+
+            elif action == "unlock_once":
+                now = time.ticks_ms()
+                duration_ms = UNLOCK_TIME_MS
+                if isinstance(payload, dict):
+                    try:
+                        duration_ms = int(payload.get("duration_ms", UNLOCK_TIME_MS))
+                    except Exception:
+                        duration_ms = UNLOCK_TIME_MS
+                if duration_ms < 1000:
+                    duration_ms = 1000
+                if duration_ms > 15000:
+                    duration_ms = 15000
+
+                lock.unlock()
+                is_locked = False
+                unlock_started_ms = time.ticks_add(now, - (UNLOCK_TIME_MS - duration_ms))
+                coins.suppress_for(COIN_NOISE_GUARD_MS)
+                pulse_output(led)
+                pulse_output(buzzer)
+
+                mqtt.publish({
+                    "coins": coins.snapshot(),
+                    "total": coins.total(),
+                    "distance_cm": distance_cm,
+                    "is_full": full_flag,
+                    "is_locked": is_locked,
+                    "wifi_connected": is_connected(wlan),
+                    "estimated_total": estimated_total,
+                    "estimated_coin_count": estimated_coin_count,
+                    "fill_percent": fill_percent,
+                })
+                print("[UNLOCK] Unlock command applied from web")
         except Exception as exc:
             print(f"[MQTT CMD ERROR] {exc}")
 
