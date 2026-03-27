@@ -18,6 +18,35 @@ function formatNumber(value) {
   }).format(Number(value) || 0);
 }
 
+function formatCompactNumber(value, options = {}) {
+  const { maximumFractionDigits = 2 } = options;
+  const numericValue = Number(value) || 0;
+  const absoluteValue = Math.abs(numericValue);
+
+  if (absoluteValue < 1000) {
+    return formatNumber(numericValue);
+  }
+
+  const units = [
+    { threshold: 1e9, suffix: 'B' },
+    { threshold: 1e6, suffix: 'M' },
+    { threshold: 1e3, suffix: 'k' },
+  ];
+
+  const matchedUnit = units.find((unit) => absoluteValue >= unit.threshold);
+  if (!matchedUnit) {
+    return formatNumber(numericValue);
+  }
+
+  const scaledValue = numericValue / matchedUnit.threshold;
+  const formattedValue = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  }).format(scaledValue);
+
+  return `${formattedValue}${matchedUnit.suffix}`;
+}
+
 function formatCurrency(value, options = {}) {
   const { minimumFractionDigits = 0, maximumFractionDigits = 0 } = options;
 
@@ -119,7 +148,7 @@ function DistributionChart({ distribution }) {
         <div className="statistics-donut" style={{ background: gradient }}>
           <div className="statistics-donut-center">
             <span>Total</span>
-            <strong>{formatNumber(totalCount)}</strong>
+            <strong title={formatNumber(totalCount)}>{formatCompactNumber(totalCount)}</strong>
           </div>
         </div>
       </div>
@@ -132,7 +161,8 @@ function DistributionChart({ distribution }) {
               <div>
                 <strong>{segment.label}</strong>
                 <span>
-                  {formatNumber(segment.count)} coins · ฿{formatCurrency(segment.value)} · {percentage.toFixed(0)}%
+                  <span title={formatNumber(segment.count)}>{formatCompactNumber(segment.count)}</span>
+                  {' '}coins · ฿{formatCurrency(segment.value)} · {percentage.toFixed(0)}%
                 </span>
               </div>
             </div>
@@ -205,12 +235,14 @@ export default function Statistics({ onNavigate }) {
   const balanceHighlights = useMemo(() => ([
     {
       label: 'Recorded Snapshots',
-      value: formatNumber(meta?.recorded_snapshots || 0),
+      value: formatCompactNumber(meta?.recorded_snapshots || 0),
+      fullValue: formatNumber(meta?.recorded_snapshots || 0),
       icon: '/icon/sectionStatisticsPage/Record.svg',
     },
     {
       label: 'Derived Deposits',
-      value: formatNumber(meta?.derived_deposit_events || 0),
+      value: formatCompactNumber(meta?.derived_deposit_events || 0),
+      fullValue: formatNumber(meta?.derived_deposit_events || 0),
       icon: '/icon/sectionStatisticsPage/process.svg',
     },
   ]), [meta]);
@@ -254,7 +286,7 @@ export default function Statistics({ onNavigate }) {
                         <img src={item.icon} alt="" aria-hidden="true" />
                         <div>
                           <span>{item.label}</span>
-                          <strong>{item.value}</strong>
+                          <strong title={item.fullValue}>{item.value}</strong>
                         </div>
                       </div>
                     ))}
@@ -268,7 +300,9 @@ export default function Statistics({ onNavigate }) {
                     <span>Total Coins Counted</span>
                     <img src="/icon/sectionStatisticsPage/statistics.svg" alt="" aria-hidden="true" />
                   </div>
-                  <strong>{formatNumber(summary?.total_coins_counted || 0)}</strong>
+                  <strong title={formatNumber(summary?.total_coins_counted || 0)}>
+                    {formatCompactNumber(summary?.total_coins_counted || 0)}
+                  </strong>
                   <p>{trendLabel}</p>
                 </article>
 
@@ -280,7 +314,14 @@ export default function Statistics({ onNavigate }) {
                   <strong>{mostFrequentCoinText}</strong>
                   <p>
                     {summary?.most_frequent_coin?.count
-                      ? `${formatNumber(summary.most_frequent_coin.count)} recorded insertions`
+                      ? (
+                        <>
+                          <span title={formatNumber(summary.most_frequent_coin.count)}>
+                            {formatCompactNumber(summary.most_frequent_coin.count)}
+                          </span>
+                          {' '}recorded insertions
+                        </>
+                      )
                       : 'The system will flag a dominant denomination once deposits begin'}
                   </p>
                 </article>

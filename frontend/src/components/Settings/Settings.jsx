@@ -582,7 +582,7 @@ const Settings = ({ onNavigate }) => {
                       className="settings-textbox"
                       value={newCard.uid}
                       onChange={(event) => setNewCard((prev) => ({ ...prev, uid: event.target.value }))}
-                      placeholder="[182, 188, 21, 6, 25]"
+                      placeholder="e.g. [182, 188, 21, 6, 25]"
                     />
                   </div>
                   <div>
@@ -591,7 +591,7 @@ const Settings = ({ onNavigate }) => {
                       className="settings-textbox"
                       value={newCard.ownerName}
                       onChange={(event) => setNewCard((prev) => ({ ...prev, ownerName: event.target.value }))}
-                      placeholder="Student card / owner name"
+                      placeholder="Enter your owner name"
                     />
                   </div>
                 </div>
