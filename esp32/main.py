@@ -35,7 +35,6 @@ from config import (
     MQTT_TOPIC_SUBSCRIBE,
     BACKEND_HOST,
     BACKEND_PORT,
-    LOCKED_RFID_UIDS,
 )
 
 try:
@@ -58,7 +57,8 @@ except Exception as exc:
 UNLOCK_TIME_MS = 5000
 RFID_COOLDOWN_MS = 1200
 RFID_POLL_INTERVAL_MS = 150  # poll RFID every 150ms; avoids hammering SPI bus
-RFID_RECOVERY_IDLE_MS = 15000
+RFID_RECOVERY_IDLE_MS = 4000
+RFID_ENROLL_TIMEOUT_MS = 30000
 DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
 DEFAULT_DASHBOARD_UPDATE_MS = 5000
@@ -85,10 +85,6 @@ def deny_beep(buzzer):
     for _ in range(2):
         pulse_output(buzzer, 140)
         time.sleep_ms(120)
-
-
-def uid_allowed_local(uid):
-    return uid in LOCKED_RFID_UIDS
 
 
 def safe_show_boot_screen(oled, ip_text=None):
@@ -132,6 +128,7 @@ def run():
     oled = init_display()
     device_ip = None
     enroll_mode = False
+    enroll_started_ms = None
     dashboard_update_ms = DEFAULT_DASHBOARD_UPDATE_MS
 
     # ===== WEB STATUS FUNCTION =====
@@ -197,7 +194,7 @@ def run():
     )
 
     def on_mqtt_command(topic, payload):
-        nonlocal enroll_mode, is_locked, unlock_started_ms, dashboard_update_ms
+        nonlocal enroll_mode, enroll_started_ms, is_locked, unlock_started_ms, dashboard_update_ms
         try:
             action = None
             if isinstance(payload, dict):
@@ -242,6 +239,7 @@ def run():
                     enabled = bool(payload.get("enabled", False))
 
                 enroll_mode = enabled
+                enroll_started_ms = time.ticks_ms() if enabled else None
                 lock.lock()
                 is_locked = True
                 unlock_started_ms = None
@@ -305,6 +303,12 @@ def run():
                                 rfid_scan_source="esp32_enroll",
                             )
                         )
+                        # Keep enroll mode one-shot on the device so a lost
+                        # "disable enroll mode" command cannot leave the board
+                        # stuck in scan-only behavior.
+                        enroll_mode = False
+                        enroll_started_ms = None
+                        mqtt.publish(current_payload(heartbeat_reason="ENROLL_MODE_AUTO_OFF"))
                         continue
 
                     # RFID card detected - authorize first, then unlock only if allowed.
@@ -333,13 +337,6 @@ def run():
                             "error": "wifi disconnected",
                         }
 
-                    # If backend is unavailable, fallback to local whitelist.
-                    if not auth_result.get("access_granted", False) and auth_result.get("error"):
-                        if uid_allowed_local(uid):
-                            auth_result["authorized"] = True
-                            auth_result["access_granted"] = True
-                            auth_result["reason"] = "LOCAL_WHITELIST_ALLOW"
-
                     if auth_result.get("access_granted", False):
                         lock.unlock()
                         is_locked = False
@@ -360,6 +357,16 @@ def run():
                     last_rfid_recover_ms = now
 
         mqtt.check_message()
+
+        if enroll_mode and enroll_started_ms is not None:
+            if time.ticks_diff(now, enroll_started_ms) >= RFID_ENROLL_TIMEOUT_MS:
+                enroll_mode = False
+                enroll_started_ms = None
+                lock.lock()
+                is_locked = True
+                unlock_started_ms = None
+                mqtt.publish(current_payload(heartbeat_reason="ENROLL_MODE_TIMEOUT"))
+                print("[RFID ENROLL MODE] timeout -> disabled")
 
         if time.ticks_diff(now, last_rfid_ok_ms) >= RFID_RECOVERY_IDLE_MS:
             if time.ticks_diff(now, last_rfid_recover_ms) >= 2000:

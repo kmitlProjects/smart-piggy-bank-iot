@@ -5,10 +5,12 @@ const Sidebar = ({ active, onNavigate }) => {
   const logo = '/logo/logo.svg';
   const dashboardIcon = '/icon/gen/sectionTabMenu/IconDashboad.svg';
   const statisticsIcon = '/icon/gen/sectionTabMenu/IconStatistics.svg';
+  const transactionsIcon = '/icon/gen/sectionTabMenu/IconTransactions.svg';
   const settingsIcon = '/icon/gen/sectionTabMenu/IconSettings.svg';
   const items = [
     { id: 'dashboard', label: 'Dashboard', icon: dashboardIcon },
     { id: 'statistics', label: 'Statistics', icon: statisticsIcon },
+    { id: 'transactions', label: 'Transactions', icon: transactionsIcon },
     { id: 'settings', label: 'Settings', icon: settingsIcon },
   ];
 

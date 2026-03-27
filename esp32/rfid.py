@@ -87,10 +87,19 @@ def read_card_uid(reader):
     try:
         status, uid = reader.anticoll()
         if status != reader.OK:
+            recover_reader(reader)
             return None
 
-        reader.select_tag(uid)
-        # Don't halt - just stop crypto to allow next detection cycle
+        if reader.select_tag(uid) != reader.OK:
+            recover_reader(reader)
+            return None
+
+        # End the active exchange cleanly so the same card can be re-read
+        # reliably on the next polling cycle.
+        try:
+            reader.halt()
+        except Exception:
+            pass
         reader.stop_crypto1()
         return uid
     except Exception as exc:

@@ -1,11 +1,13 @@
 import React from 'react';
 import './CoinBreakdown.css';
 
-const CoinBreakdown = ({ coins }) => (
+const CoinBreakdown = ({ coins, onViewHistory }) => (
   <section className="coin-breakdown-root">
     <div className="coin-breakdown-header">
       <span>Coin Breakdown</span>
-      <button type="button" className="coin-breakdown-history">View History</button>
+      <button type="button" className="coin-breakdown-history" onClick={onViewHistory}>
+        View History
+      </button>
     </div>
     <div className="coin-breakdown-cards">
       {coins.map((coin) => (

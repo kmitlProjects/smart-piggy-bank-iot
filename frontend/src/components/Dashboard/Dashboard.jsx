@@ -70,7 +70,7 @@ const Dashboard = ({ onNavigate }) => {
           ) : (
             <>
               <HeroSection totalSavings={totalSavings} percent={percent} updatedAt={updatedAt} />
-              <CoinBreakdown coins={coinArr} />
+              <CoinBreakdown coins={coinArr} onViewHistory={() => onNavigate && onNavigate('transactions')} />
               <div className="dashboard-bento">
                 <VaultStatus percent={percent} distance={distance} isFull={Boolean(safeStatus.is_full)} />
                 <SecurityStatus
