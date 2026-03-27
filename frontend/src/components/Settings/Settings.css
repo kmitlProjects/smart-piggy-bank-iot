@@ -17,6 +17,10 @@
 
 .settings-page {
   margin-left: var(--dashboard-sidebar-width);
+  min-height: 100dvh;
+}
+
+.settings-content {
   padding: 36px clamp(18px, 3vw, 44px) 48px;
 }
 
@@ -506,7 +510,7 @@
 }
 
 @media (max-width: 900px) {
-  .settings-page {
+  .settings-content {
     padding-inline: 18px;
   }
 
@@ -519,6 +523,9 @@
 @media (max-width: 767px) {
   .settings-page {
     margin-left: 0;
+  }
+
+  .settings-content {
     padding: 22px 16px 120px;
   }
 

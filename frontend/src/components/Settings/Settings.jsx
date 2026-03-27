@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './Settings.css';
 import Sidebar from '../Dashboard/Sidebar';
+import Topbar from '../Dashboard/Topbar';
 import {
   readRefreshIntervalSec,
   writeRefreshIntervalSec,
@@ -63,6 +64,7 @@ const Settings = ({ onNavigate }) => {
     esp32Ip: 'Unknown',
     connectionStatus: 'UNKNOWN',
     lastSeen: 'No heartbeat received yet',
+    lastSeenAt: null,
     dashboardRefreshSec: readRefreshIntervalSec(),
     dashboardHost: '',
     dashboardUrl: '',
@@ -123,6 +125,7 @@ const Settings = ({ onNavigate }) => {
         esp32Ip: deviceRes.esp32_ip || 'Unknown',
         connectionStatus: deviceRes.connection_status || 'UNKNOWN',
         lastSeen: formatTimestamp(deviceRes.last_seen_at),
+        lastSeenAt: deviceRes.last_seen_at || null,
         dashboardRefreshSec: syncedRefreshInterval,
         dashboardHost,
         dashboardUrl,
@@ -401,6 +404,7 @@ const Settings = ({ onNavigate }) => {
   };
 
   const isConnected = device.connectionStatus === 'CONNECTED';
+  const locked = !isUnlocked;
   const scanStatusText = enrollment.last_scanned_at
     ? `Last scanned: ${formatTimestamp(enrollment.last_scanned_at)}`
     : 'No card scanned in scan mode yet.';
@@ -410,22 +414,25 @@ const Settings = ({ onNavigate }) => {
       <Sidebar active="settings" onNavigate={onNavigate} />
 
       <main className="settings-page">
-        <header className="settings-header">
-          <h2>Configuration</h2>
-          <div className="settings-desc">
-            Tune the live dashboard cadence, manage RFID access, and keep service actions in one place.
-          </div>
-        </header>
+        <Topbar wifi={isConnected} locked={locked} lastSeenAt={device.lastSeenAt} />
 
-        {(error || notice) && (
-          <div className={`settings-banner ${error ? 'is-error' : 'is-success'}`}>
-            {error || notice}
-          </div>
-        )}
+        <div className="settings-content">
+          <header className="settings-header">
+            <h2>Configuration</h2>
+            <div className="settings-desc">
+              Tune the live dashboard cadence, manage RFID access, and keep service actions in one place.
+            </div>
+          </header>
 
-        <div className="settings-shell">
-          <div className="settings-overview-grid">
-            <section className="settings-card settings-card-device">
+          {(error || notice) && (
+            <div className={`settings-banner ${error ? 'is-error' : 'is-success'}`}>
+              {error || notice}
+            </div>
+          )}
+
+          <div className="settings-shell">
+            <div className="settings-overview-grid">
+              <section className="settings-card settings-card-device">
               <div className="settings-card-head">
                 <div className="settings-card-title">
                   <img className="settings-card-icon" src="/icon/sectionSettingPage/ipAddress.svg" alt="Device" />
@@ -478,9 +485,9 @@ const Settings = ({ onNavigate }) => {
                   <span className="settings-detail-value settings-detail-value-code">{device.backendContainerIp}</span>
                 </div>
               </div>
-            </section>
+              </section>
 
-            <section className="settings-card settings-card-refresh">
+              <section className="settings-card settings-card-refresh">
               <div className="settings-card-head">
                 <div className="settings-card-title">
                   <img className="settings-card-icon" src="/icon/sectionSettingPage/reflesh.svg" alt="Refresh" />
@@ -513,19 +520,19 @@ const Settings = ({ onNavigate }) => {
                 <span>5s</span>
                 <span>10s</span>
               </div>
-            </section>
-          </div>
-
-          <section className="settings-card settings-card-wide settings-card-rfid">
-            <div className="settings-card-head">
-              <div className="settings-card-title">
-                <img className="settings-card-icon" src="/icon/sectionSettingPage/lockWarning.svg" alt="RFID" />
-                <span>RFID Access Control</span>
-              </div>
-              <span className={`settings-pill ${enrollment.active ? 'is-active' : 'is-muted'}`}>
-                {enrollment.active ? 'Scan mode on' : 'Scan mode off'}
-              </span>
+              </section>
             </div>
+
+            <section className="settings-card settings-card-wide settings-card-rfid">
+              <div className="settings-card-head">
+                <div className="settings-card-title">
+                  <img className="settings-card-icon" src="/icon/sectionSettingPage/lockWarning.svg" alt="RFID" />
+                  <span>RFID Access Control</span>
+                </div>
+                <span className={`settings-pill ${enrollment.active ? 'is-active' : 'is-muted'}`}>
+                  {enrollment.active ? 'Scan mode on' : 'Scan mode off'}
+                </span>
+              </div>
 
             <div className="settings-note">
               When scan mode is on, RFID taps are captured for enrollment and unlock-by-card is paused temporarily.
@@ -691,50 +698,51 @@ const Settings = ({ onNavigate }) => {
                 </div>
               </div>
             </div>
-          </section>
+            </section>
 
-          <section className="settings-card settings-card-wide settings-card-maintenance">
-            <div className="settings-card-head">
-              <div className="settings-card-title">
-                <img className="settings-card-icon" src="/icon/sectionSettingPage/unlock.svg" alt="Manual control" />
-                <span>Manual Vault Control</span>
+            <section className="settings-card settings-card-wide settings-card-maintenance">
+              <div className="settings-card-head">
+                <div className="settings-card-title">
+                  <img className="settings-card-icon" src="/icon/sectionSettingPage/unlock.svg" alt="Manual control" />
+                  <span>Manual Vault Control</span>
+                </div>
+                <span className={`settings-pill ${isUnlocked ? 'is-active' : 'is-muted'}`}>
+                  {isUnlocked ? 'Unlocked' : 'Locked'}
+                </span>
               </div>
-              <span className={`settings-pill ${isUnlocked ? 'is-active' : 'is-muted'}`}>
-                {isUnlocked ? 'Unlocked' : 'Locked'}
-              </span>
-            </div>
 
-            <div className="settings-note">
-              Use this action when you need a one-time web unlock. It does not replace RFID authorization.
-            </div>
+              <div className="settings-note">
+                Use this action when you need a one-time web unlock. It does not replace RFID authorization.
+              </div>
 
-            <div className="settings-maintenance-actions">
-              <button
-                className={`settings-btn unlock ${isUnlocked ? 'unlocked' : ''}`}
-                onClick={handleUnlock}
-                disabled={isUnlocking}
-              >
-                {isUnlocking ? 'Unlocking...' : isUnlocked ? 'Vault unlocked' : 'Unlock vault'}
+              <div className="settings-maintenance-actions">
+                <button
+                  className={`settings-btn unlock ${isUnlocked ? 'unlocked' : ''}`}
+                  onClick={handleUnlock}
+                  disabled={isUnlocking}
+                >
+                  {isUnlocking ? 'Unlocking...' : isUnlocked ? 'Vault unlocked' : 'Unlock vault'}
+                </button>
+              </div>
+            </section>
+
+            <section className="settings-card settings-card-wide settings-card-danger">
+              <div className="settings-card-head">
+                <div className="settings-card-title danger">
+                  <img className="settings-card-icon" src="/icon/sectionSettingPage/warning.svg" alt="Danger" />
+                  <span>Danger Zone</span>
+                </div>
+              </div>
+
+              <div className="settings-danger-copy">
+                Resetting the counter clears dashboard session data and recent device state. Authorized RFID cards stay stored.
+              </div>
+
+              <button className="settings-btn danger" onClick={handleResetCounter} disabled={resetting}>
+                {resetting ? 'Resetting...' : 'Reset coin counter'}
               </button>
-            </div>
-          </section>
-
-          <section className="settings-card settings-card-wide settings-card-danger">
-            <div className="settings-card-head">
-              <div className="settings-card-title danger">
-                <img className="settings-card-icon" src="/icon/sectionSettingPage/warning.svg" alt="Danger" />
-                <span>Danger Zone</span>
-              </div>
-            </div>
-
-            <div className="settings-danger-copy">
-              Resetting the counter clears dashboard session data and recent device state. Authorized RFID cards stay stored.
-            </div>
-
-            <button className="settings-btn danger" onClick={handleResetCounter} disabled={resetting}>
-              {resetting ? 'Resetting...' : 'Reset coin counter'}
-            </button>
-          </section>
+            </section>
+          </div>
         </div>
       </main>
     </div>

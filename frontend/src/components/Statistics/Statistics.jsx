@@ -206,12 +206,12 @@ export default function Statistics({ onNavigate }) {
     {
       label: 'Recorded Snapshots',
       value: formatNumber(meta?.recorded_snapshots || 0),
-      icon: '/icon/sectionStatisticsPage/statistics.svg',
+      icon: '/icon/sectionStatisticsPage/Record.svg',
     },
     {
       label: 'Derived Deposits',
       value: formatNumber(meta?.derived_deposit_events || 0),
-      icon: '/icon/sectionStatisticsPage/growth.svg',
+      icon: '/icon/sectionStatisticsPage/process.svg',
     },
   ]), [meta]);
 
@@ -275,14 +275,7 @@ export default function Statistics({ onNavigate }) {
                 <article className="statistics-summary-card">
                   <div className="statistics-summary-header">
                     <span>Most Frequent Coin</span>
-                    <div
-                      className="statistics-coin-badge"
-                      style={{ backgroundColor: `${COIN_COLORS[mostFrequentCoinValue] || '#dfe8ea'}22` }}
-                    >
-                      <span style={{ color: COIN_COLORS[mostFrequentCoinValue] || '#64748b' }}>
-                        {mostFrequentCoinValue ? `฿${mostFrequentCoinValue}` : '—'}
-                      </span>
-                    </div>
+                    <img src="/icon/sectionStatisticsPage/frequency.svg" alt="" aria-hidden="true" />
                   </div>
                   <strong>{mostFrequentCoinText}</strong>
                   <p>
