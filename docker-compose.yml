@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    env_file:
+      - ./backend/.env
     environment:
       API_HOST: 0.0.0.0
       API_PORT: 5001

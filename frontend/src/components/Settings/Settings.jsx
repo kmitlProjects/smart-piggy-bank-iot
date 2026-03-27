@@ -22,6 +22,30 @@ function formatTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function browserAccessInfo() {
+  if (typeof window === 'undefined') {
+    return {
+      host: '',
+      url: '',
+    };
+  }
+
+  const { protocol, hostname, port } = window.location;
+  const isLocalOnlyHost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+  if (isLocalOnlyHost || !hostname) {
+    return {
+      host: '',
+      url: '',
+    };
+  }
+
+  return {
+    host: hostname,
+    url: `${protocol}//${hostname}${port ? `:${port}` : ''}`,
+  };
+}
+
 async function fetchJson(path, options = {}) {
   const response = await fetch(path, options);
 
@@ -35,11 +59,14 @@ async function fetchJson(path, options = {}) {
 const Settings = ({ onNavigate }) => {
   const [device, setDevice] = useState({
     wifiSsid: 'Unknown',
-    localIp: '127.0.0.1',
+    backendContainerIp: '127.0.0.1',
     esp32Ip: 'Unknown',
     connectionStatus: 'UNKNOWN',
     lastSeen: 'No heartbeat received yet',
     dashboardRefreshSec: readRefreshIntervalSec(),
+    dashboardHost: '',
+    dashboardUrl: '',
+    apiUrl: '',
   });
   const [refreshInterval, setRefreshInterval] = useState(readRefreshIntervalSec);
   const [rfidCards, setRfidCards] = useState([]);
@@ -86,14 +113,20 @@ const Settings = ({ onNavigate }) => {
       const syncedRefreshInterval = Number.isFinite(Number(deviceRes.dashboard_refresh_sec))
         ? writeRefreshIntervalSec(deviceRes.dashboard_refresh_sec)
         : readRefreshIntervalSec();
+      const browserAccess = browserAccessInfo();
+      const dashboardHost = deviceRes.dashboard_host || browserAccess.host || '';
+      const dashboardUrl = deviceRes.dashboard_url || browserAccess.url || '';
 
       setDevice({
         wifiSsid: deviceRes.wifi_ssid || 'Unknown',
-        localIp: deviceRes.local_ip || '127.0.0.1',
+        backendContainerIp: deviceRes.backend_container_ip || deviceRes.local_ip || '127.0.0.1',
         esp32Ip: deviceRes.esp32_ip || 'Unknown',
         connectionStatus: deviceRes.connection_status || 'UNKNOWN',
         lastSeen: formatTimestamp(deviceRes.last_seen_at),
         dashboardRefreshSec: syncedRefreshInterval,
+        dashboardHost,
+        dashboardUrl,
+        apiUrl: deviceRes.api_url || '',
       });
       setRefreshInterval(syncedRefreshInterval);
       setRfidCards(Array.isArray(cardsRes.cards) ? cardsRes.cards : []);
@@ -395,7 +428,7 @@ const Settings = ({ onNavigate }) => {
             <section className="settings-card settings-card-device">
               <div className="settings-card-head">
                 <div className="settings-card-title">
-                  <img className="settings-card-icon" src="/icon/sectionSettingPage/Icon.svg" alt="Device" />
+                  <img className="settings-card-icon" src="/icon/sectionSettingPage/ipAddress.svg" alt="Device" />
                   <span>Device Connection</span>
                 </div>
                 <button
@@ -421,16 +454,28 @@ const Settings = ({ onNavigate }) => {
                   <span className="settings-detail-value">{device.wifiSsid}</span>
                 </div>
                 <div className="settings-detail-item">
-                  <span className="settings-label">Backend host IP</span>
-                  <span className="settings-detail-value">{device.localIp}</span>
+                  <span className="settings-label">Dashboard access host</span>
+                  <span className="settings-detail-value settings-detail-value-code">
+                    {device.dashboardHost || 'Set PUBLIC_DASHBOARD_HOST in backend/.env'}
+                  </span>
                 </div>
                 <div className="settings-detail-item">
                   <span className="settings-label">ESP32 device IP</span>
-                  <span className="settings-detail-value">{device.esp32Ip}</span>
+                  <span className="settings-detail-value settings-detail-value-code">{device.esp32Ip}</span>
                 </div>
                 <div className="settings-detail-item">
                   <span className="settings-label">Current heartbeat cadence</span>
                   <span className="settings-detail-value">{device.dashboardRefreshSec}s</span>
+                </div>
+                <div className="settings-detail-item">
+                  <span className="settings-label">Dashboard access URL</span>
+                  <span className="settings-detail-value settings-detail-value-code">
+                    {device.dashboardUrl || 'Open this page via LAN IP or set PUBLIC_DASHBOARD_HOST'}
+                  </span>
+                </div>
+                <div className="settings-detail-item">
+                  <span className="settings-label">Backend container IP</span>
+                  <span className="settings-detail-value settings-detail-value-code">{device.backendContainerIp}</span>
                 </div>
               </div>
             </section>
@@ -508,8 +553,8 @@ const Settings = ({ onNavigate }) => {
                     {togglingEnroll
                       ? 'Updating...'
                       : enrollment.active
-                        ? 'Stop scan mode'
-                        : 'Start scan mode'}
+                        ? 'Stop'
+                        : 'Start'}
                   </button>
                 </div>
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync shared host config for ESP32 + backend.
+"""Sync shared host config for ESP32 + backend + dashboard access.
 
 Examples:
   python tools/set_host.py 192.168.1.50
@@ -67,6 +67,7 @@ def main() -> int:
 
     esp32_text = _replace_line(esp32_text, "MQTT_BROKER", host, quoted=True)
     backend_text = _replace_line(backend_text, "MQTT_BROKER", host, quoted=False)
+    backend_text = _replace_line(backend_text, "PUBLIC_DASHBOARD_HOST", host, quoted=False)
 
     ESP32_CONFIG.write_text(esp32_text, encoding="utf-8")
     BACKEND_ENV.write_text(backend_text, encoding="utf-8")
@@ -75,6 +76,8 @@ def main() -> int:
     print("Updated:")
     print("- esp32/config.py")
     print("- backend/.env")
+    print("  - MQTT_BROKER")
+    print("  - PUBLIC_DASHBOARD_HOST")
     return 0
 
 

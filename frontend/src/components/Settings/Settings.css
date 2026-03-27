@@ -218,6 +218,12 @@
   word-break: break-word;
 }
 
+.settings-detail-value-code {
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
 .settings-interval-meta {
   display: flex;
   align-items: center;
