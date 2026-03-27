@@ -6,6 +6,7 @@ import paho.mqtt.client as mqtt
 from config import MQTT_BROKER, MQTT_CLIENT_ID, MQTT_PORT, MQTT_TOPIC_DATA
 from db import (
     insert_coin_event,
+    log_activity_event,
     mark_device_seen,
     record_rfid_scan,
     upsert_device_runtime,
@@ -32,15 +33,36 @@ class MQTTIngestService:
     def on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
+            heartbeat_reason = payload.get("heartbeat_reason")
+
             if payload.get("rfid_scan_uid") is not None:
                 record_rfid_scan(payload["rfid_scan_uid"], source=payload.get("rfid_scan_source", "esp32_enroll"))
 
             upsert_device_runtime(payload, device_id="esp32")
 
+            if heartbeat_reason == "WEB_UNLOCK":
+                log_activity_event(
+                    event_type="access",
+                    action="WEB_UNLOCK",
+                    status="APPLIED",
+                    source="device",
+                    reason="WEB_UNLOCK",
+                    details="Unlock command applied on the ESP32 device.",
+                )
+            elif heartbeat_reason == "RESET":
+                log_activity_event(
+                    event_type="system",
+                    action="RESET_DATA",
+                    status="APPLIED",
+                    source="device",
+                    reason="RESET",
+                    details="Coin counter reset was applied on the ESP32 device.",
+                )
+
             if any(key in payload for key in ("coins", "total", "distance_cm", "is_locked", "fill_percent")):
                 insert_coin_event(payload, source="mqtt", device_id="esp32")
                 upsert_latest_status(payload, device_id="esp32")
-                mark_device_seen(device_id="esp32", reason=payload.get("heartbeat_reason", "HEARTBEAT"))
+                mark_device_seen(device_id="esp32", reason=heartbeat_reason or "HEARTBEAT")
             print("MQTT message stored")
         except Exception as exc:
             print(f"MQTT ingest failed: {exc}")

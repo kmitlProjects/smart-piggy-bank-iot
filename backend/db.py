@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS access_logs (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS activity_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    action TEXT NOT NULL,
+    status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    uid TEXT,
+    reason TEXT,
+    details TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS connectivity_state (
     device_id TEXT PRIMARY KEY,
     current_state TEXT NOT NULL,
@@ -611,35 +623,13 @@ def is_card_authorized(uid: Any) -> bool:
     uid_text = _uid_to_text(uid)
     conn = _conn()
     try:
-        active_count_row = conn.execute(
-            "SELECT COUNT(*) AS c FROM rfid_cards WHERE is_active = 1"
-        ).fetchone()
         row = conn.execute(
             "SELECT 1 FROM rfid_cards WHERE uid = ? AND is_active = 1 LIMIT 1",
             (uid_text,),
         ).fetchone()
-        active_count = active_count_row["c"] if active_count_row is not None else 0
-        if active_count > 0:
-            return row is not None
-        if row is not None:
-            return True
+        return row is not None
     finally:
         conn.close()
-
-    from config import LOCKED_RFID_UIDS
-
-    try:
-        if isinstance(uid, str) and uid.startswith('['):
-            import ast
-            uid = ast.literal_eval(uid)
-    except:
-        pass
-
-    for allowed_uid in LOCKED_RFID_UIDS:
-        if uid == allowed_uid:
-            return True
-
-    return False
 
 
 def log_access(uid: Any, wifi_connected: bool, authorized: bool, access_granted: bool, reason: str) -> None:
@@ -815,6 +805,23 @@ def get_coin_history(limit: int = 100) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def get_coin_events_for_statistics() -> List[Dict[str, Any]]:
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, device_id, coin_1, coin_2, coin_5, coin_10, total,
+                   distance_cm, is_full, estimated_total, estimated_coin_count,
+                   fill_percent, wifi_connected, is_locked, source, created_at
+            FROM coin_events
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        return [_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def get_access_history(limit: int = 100) -> List[Dict[str, Any]]:
     conn = _conn()
     try:
@@ -827,11 +834,53 @@ def get_access_history(limit: int = 100) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def log_activity_event(
+    event_type: str,
+    action: str,
+    status: str,
+    source: str,
+    uid: Any = None,
+    reason: Optional[str] = None,
+    details: Optional[str] = None,
+) -> None:
+    uid_text = _uid_to_text(uid) if uid is not None else None
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO activity_events (event_type, action, status, source, uid, reason, details, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (event_type, action, status, source, uid_text, reason, details, _now_iso()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_activity_history(limit: int = 100) -> List[Dict[str, Any]]:
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, event_type, action, status, source, uid, reason, details, created_at
+            FROM activity_events
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def reset_database(clear_cards: bool = False) -> Dict[str, int]:
     conn = _conn()
     try:
         deleted_coin_events = conn.execute("DELETE FROM coin_events").rowcount
         deleted_access_logs = conn.execute("DELETE FROM access_logs").rowcount
+        deleted_activity_events = conn.execute("DELETE FROM activity_events").rowcount
         deleted_status = conn.execute("DELETE FROM latest_status").rowcount
         deleted_device_runtime = conn.execute("DELETE FROM device_runtime").rowcount
         deleted_device_settings = conn.execute("DELETE FROM device_settings").rowcount
@@ -846,6 +895,7 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
         return {
             "coin_events": deleted_coin_events,
             "access_logs": deleted_access_logs,
+            "activity_events": deleted_activity_events,
             "latest_status": deleted_status,
             "device_runtime": deleted_device_runtime,
             "device_settings": deleted_device_settings,

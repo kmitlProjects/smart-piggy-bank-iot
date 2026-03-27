@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import { Buffer } from 'buffer'
 import process from 'process'
 import Dashboard from './components/Dashboard/Dashboard.jsx'
+import Statistics from './components/Statistics/Statistics.jsx'
+import Transactions from './components/Transactions/Transactions.jsx'
 import Settings from './components/Settings/Settings.jsx'
 import './index.css'
 
@@ -22,6 +24,8 @@ function AppRouter() {
   return (
     <>
       {page === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
+      {page === 'statistics' && <Statistics onNavigate={handleNavigate} />}
+      {page === 'transactions' && <Transactions onNavigate={handleNavigate} />}
       {page === 'settings' && <Settings onNavigate={handleNavigate} />}
     </>
   );

@@ -7,12 +7,15 @@ set -euo pipefail
 # Example:
 #   ./tools/sync_up.sh 10.163.23.245 neae4850
 #   ./tools/sync_up.sh auto neae4850
-#   ./tools/sync_up.sh auto neae4850 10.164.223.24
+#   ./tools/sync_up.sh auto neae4850 10.164.223.245
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
   echo "Usage: $0 <host|auto> <password> [preferred_ip]"
   exit 1
 fi
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 HOST="$1"
 PASS="$2"
@@ -21,9 +24,10 @@ if [[ $# -eq 3 ]]; then
   PREFERRED_IP="$3"
 fi
 PY="python3"
-CLI="./webrepl_cli.py"
-FINDER="./find_webrepl_host.py"
-CACHE_FILE=".webrepl_last_host"
+CLI="$SCRIPT_DIR/webrepl_cli.py"
+FINDER="$SCRIPT_DIR/find_webrepl_host.py"
+CACHE_FILE="$SCRIPT_DIR/.webrepl_last_host"
+ESP32_DIR="$PROJECT_ROOT/esp32"
 MDNS_HOSTNAME="esp32.local"
 FIND_TIMEOUT="0.5"
 
@@ -59,8 +63,8 @@ if [[ ! -f "$FINDER" ]]; then
   exit 1
 fi
 
-if [[ ! -d "../esp32" ]]; then
-  echo "Error: ../esp32 directory not found"
+if [[ ! -d "$ESP32_DIR" ]]; then
+  echo "Error: $ESP32_DIR directory not found"
   exit 1
 fi
 
@@ -75,7 +79,6 @@ if [[ "$HOST" == "auto" ]]; then
   fi
 
   echo "Discovering WebREPL host on local network ..."
-  PREFERRED_IP=""
   CACHE_IP=""
   if [[ -f "$CACHE_FILE" ]]; then
     CACHE_IP="$(tr -d '[:space:]' < "$CACHE_FILE")"
@@ -100,18 +103,16 @@ if [[ "$HOST" == "auto" ]]; then
   echo "Auto-discovered host: $HOST"
 fi
 
-echo "Uploading esp32/lib/*.py to $HOST ..."
-
-echo "Uploading ../esp32/*.py to $HOST ..."
-for f in ../esp32/*.py; do
+echo "Uploading $ESP32_DIR/*.py to $HOST ..."
+for f in "$ESP32_DIR"/*.py; do
   [[ -f "$f" ]] || continue
   dst="${HOST}:/$(basename "$f")"
   echo "  $f -> $dst"
   upload_with_retry "$f" "$dst"
 done
 
-echo "Uploading ../esp32/lib/*.py to $HOST ..."
-for f in ../esp32/lib/*.py; do
+echo "Uploading $ESP32_DIR/lib/*.py to $HOST ..."
+for f in "$ESP32_DIR"/lib/*.py; do
   [[ -f "$f" ]] || continue
   dst="${HOST}:/lib/$(basename "$f")"
   echo "  $f -> $dst"
