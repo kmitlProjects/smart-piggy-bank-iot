@@ -21,6 +21,19 @@
   flex-wrap: wrap;
 }
 
+.topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-brand-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .topbar-title {
   font-family: 'Inter', sans-serif;
   font-weight: 800;
@@ -125,6 +138,10 @@
   .topbar-title-group,
   .topbar-icons {
     width: 100%;
+  }
+
+  .topbar-brand {
+    max-width: 100%;
   }
 
   .topbar-icons {

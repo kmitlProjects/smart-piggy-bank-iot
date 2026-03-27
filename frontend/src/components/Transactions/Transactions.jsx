@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '../Dashboard/Sidebar';
 import Topbar from '../Dashboard/Topbar';
 import { COIN_COLORS } from '../../utils/coinColors';
@@ -6,6 +6,61 @@ import './Transactions.css';
 
 const COIN_FILTERS = ['all', '10', '5', '2', '1'];
 const ROWS_PER_PAGE = 10;
+
+function readTransactionsViewFromLocation() {
+  if (typeof window === 'undefined') {
+    return {
+      search: '',
+      coinFilter: 'all',
+      page: 1,
+    };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const coinFilter = params.get('coin') || 'all';
+  const parsedPage = Number.parseInt(params.get('page') || '1', 10);
+
+  return {
+    search: params.get('q') || '',
+    coinFilter: COIN_FILTERS.includes(coinFilter) ? coinFilter : 'all',
+    page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
+  };
+}
+
+function writeTransactionsViewToLocation({ search, coinFilter, page }) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const trimmedSearch = search.trim();
+
+  if (trimmedSearch) {
+    params.set('q', trimmedSearch);
+  } else {
+    params.delete('q');
+  }
+
+  if (coinFilter && coinFilter !== 'all') {
+    params.set('coin', coinFilter);
+  } else {
+    params.delete('coin');
+  }
+
+  if (page > 1) {
+    params.set('page', String(page));
+  } else {
+    params.delete('page');
+  }
+
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }
+}
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-US', {
@@ -45,12 +100,13 @@ function paginate(totalItems, currentPage, pageSize) {
 }
 
 export default function Transactions({ onNavigate }) {
+  const initialViewRef = useRef(readTransactionsViewFromLocation());
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [coinFilter, setCoinFilter] = useState('all');
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(initialViewRef.current.search);
+  const [coinFilter, setCoinFilter] = useState(initialViewRef.current.coinFilter);
+  const [page, setPage] = useState(initialViewRef.current.page);
 
   const loadTransactions = useCallback(async () => {
     try {
@@ -89,8 +145,16 @@ export default function Transactions({ onNavigate }) {
   }, [loadTransactions]);
 
   useEffect(() => {
-    setPage(1);
-  }, [search, coinFilter]);
+    const syncFromLocation = () => {
+      const nextView = readTransactionsViewFromLocation();
+      setSearch(nextView.search);
+      setCoinFilter(nextView.coinFilter);
+      setPage(nextView.page);
+    };
+
+    window.addEventListener('popstate', syncFromLocation);
+    return () => window.removeEventListener('popstate', syncFromLocation);
+  }, []);
 
   const hero = payload?.hero ?? {};
   const device = payload?.device ?? {};
@@ -131,6 +195,20 @@ export default function Transactions({ onNavigate }) {
 
   const pagination = paginate(filteredTransactions.length, page, ROWS_PER_PAGE);
   const pageRows = filteredTransactions.slice(pagination.start, pagination.end);
+
+  useEffect(() => {
+    if (page !== pagination.safePage) {
+      setPage(pagination.safePage);
+    }
+  }, [page, pagination.safePage]);
+
+  useEffect(() => {
+    writeTransactionsViewToLocation({
+      search,
+      coinFilter,
+      page,
+    });
+  }, [search, coinFilter, page]);
 
   const handleExport = () => {
     const rows = filteredTransactions.map((transaction) => ({
@@ -205,7 +283,7 @@ export default function Transactions({ onNavigate }) {
                     </div>
                   </div>
                   <img
-                    src="/icon/sectionTransactionsPage/history.svg"
+                    src="/icon/sectionTransactionsPage/pigIcon.svg"
                     alt=""
                     aria-hidden="true"
                     className="transactions-balance-art"
@@ -246,7 +324,10 @@ export default function Transactions({ onNavigate }) {
                       <input
                         type="search"
                         value={search}
-                        onChange={(event) => setSearch(event.target.value)}
+                        onChange={(event) => {
+                          setSearch(event.target.value);
+                          setPage(1);
+                        }}
                         placeholder="Search transactions..."
                       />
                     </label>
@@ -263,7 +344,10 @@ export default function Transactions({ onNavigate }) {
                       key={filterValue}
                       type="button"
                       className={`transactions-filter-btn${coinFilter === filterValue ? ' active' : ''}`}
-                      onClick={() => setCoinFilter(filterValue)}
+                      onClick={() => {
+                        setCoinFilter(filterValue);
+                        setPage(1);
+                      }}
                     >
                       {filterValue === 'all' ? 'All Coins' : `฿${filterValue}`}
                     </button>

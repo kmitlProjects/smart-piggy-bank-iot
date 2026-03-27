@@ -29,7 +29,14 @@ const Topbar = ({ wifi, locked, lastSeenAt }) => {
   return (
     <header className="topbar-root">
       <div className="topbar-title-group">
-        <div className="topbar-title">Smart Piggy Bank</div>
+        <div className="topbar-brand">
+          <img
+            className="topbar-brand-logo"
+            src="/logo/miniLogopiggy.svg"
+            alt="Smart Piggy Bank logo"
+          />
+          <div className="topbar-title">Smart Piggy Bank</div>
+        </div>
         <span className={`topbar-status ${wifi ? 'is-online' : 'is-offline'}`}>
           <span className="topbar-dot"></span>
           <span className="topbar-status-text">{wifi ? 'Connected' : 'Disconnected'}</span>

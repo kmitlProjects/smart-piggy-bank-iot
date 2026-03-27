@@ -81,7 +81,7 @@ const Dashboard = ({ onNavigate }) => {
                   unlockError={unlockError}
                 />
               </div>
-              <Banner />
+              <Banner onExplore={() => onNavigate && onNavigate('transactions')} />
             </>
           )}
         </div>
