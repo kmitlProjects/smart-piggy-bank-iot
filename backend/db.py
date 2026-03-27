@@ -91,6 +91,13 @@ CREATE TABLE IF NOT EXISTS device_runtime (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS device_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    device_id TEXT,
+    dashboard_update_ms INTEGER NOT NULL DEFAULT 5000,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS rfid_enrollment_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     active INTEGER NOT NULL DEFAULT 0,
@@ -309,30 +316,44 @@ def _uid_to_text(uid: Any) -> str:
     return str(uid).strip()
 
 
+def _sanitize_dashboard_update_ms(value: Any, default: int = 5000) -> int:
+    try:
+        numeric_value = int(value)
+    except Exception:
+        numeric_value = default
+
+    return max(1000, min(10000, numeric_value))
+
+
 def upsert_device_runtime(payload: Dict[str, Any], device_id: str) -> None:
     wifi_ssid = payload.get("wifi_ssid")
     esp32_ip = payload.get("esp32_ip")
+    dashboard_update_ms = payload.get("dashboard_update_ms")
 
-    if wifi_ssid is None and esp32_ip is None:
-        return
+    if wifi_ssid is not None or esp32_ip is not None:
+        conn = _conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO device_runtime (id, device_id, wifi_ssid, esp32_ip, updated_at)
+                VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    device_id = excluded.device_id,
+                    wifi_ssid = COALESCE(excluded.wifi_ssid, device_runtime.wifi_ssid),
+                    esp32_ip = COALESCE(excluded.esp32_ip, device_runtime.esp32_ip),
+                    updated_at = excluded.updated_at
+                """,
+                (device_id, wifi_ssid, esp32_ip, _now_iso()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
-    conn = _conn()
-    try:
-        conn.execute(
-            """
-            INSERT INTO device_runtime (id, device_id, wifi_ssid, esp32_ip, updated_at)
-            VALUES (1, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                device_id = excluded.device_id,
-                wifi_ssid = COALESCE(excluded.wifi_ssid, device_runtime.wifi_ssid),
-                esp32_ip = COALESCE(excluded.esp32_ip, device_runtime.esp32_ip),
-                updated_at = excluded.updated_at
-            """,
-            (device_id, wifi_ssid, esp32_ip, _now_iso()),
+    if dashboard_update_ms is not None:
+        set_device_refresh_interval(
+            device_id=device_id,
+            dashboard_update_ms=_sanitize_dashboard_update_ms(dashboard_update_ms),
         )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def get_device_runtime() -> Dict[str, Any]:
@@ -340,6 +361,42 @@ def get_device_runtime() -> Dict[str, Any]:
     try:
         row = conn.execute(
             "SELECT device_id, wifi_ssid, esp32_ip, updated_at FROM device_runtime WHERE id = 1"
+        ).fetchone()
+        return _to_dict(row) if row else {}
+    finally:
+        conn.close()
+
+
+def set_device_refresh_interval(device_id: str, dashboard_update_ms: int) -> Dict[str, Any]:
+    now = _now_iso()
+    safe_value = _sanitize_dashboard_update_ms(dashboard_update_ms)
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO device_settings (id, device_id, dashboard_update_ms, updated_at)
+            VALUES (1, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                device_id = excluded.device_id,
+                dashboard_update_ms = excluded.dashboard_update_ms,
+                updated_at = excluded.updated_at
+            """,
+            (device_id, safe_value, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT device_id, dashboard_update_ms, updated_at FROM device_settings WHERE id = 1"
+        ).fetchone()
+        return _to_dict(row) if row else {}
+    finally:
+        conn.close()
+
+
+def get_device_settings() -> Dict[str, Any]:
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT device_id, dashboard_update_ms, updated_at FROM device_settings WHERE id = 1"
         ).fetchone()
         return _to_dict(row) if row else {}
     finally:
@@ -777,6 +834,7 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
         deleted_access_logs = conn.execute("DELETE FROM access_logs").rowcount
         deleted_status = conn.execute("DELETE FROM latest_status").rowcount
         deleted_device_runtime = conn.execute("DELETE FROM device_runtime").rowcount
+        deleted_device_settings = conn.execute("DELETE FROM device_settings").rowcount
         deleted_enrollment_state = conn.execute("DELETE FROM rfid_enrollment_state").rowcount
         deleted_scan_events = conn.execute("DELETE FROM rfid_scan_events").rowcount
         deleted_connectivity_state = conn.execute("DELETE FROM connectivity_state").rowcount
@@ -790,6 +848,7 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
             "access_logs": deleted_access_logs,
             "latest_status": deleted_status,
             "device_runtime": deleted_device_runtime,
+            "device_settings": deleted_device_settings,
             "rfid_enrollment_state": deleted_enrollment_state,
             "rfid_scan_events": deleted_scan_events,
             "connectivity_state": deleted_connectivity_state,
