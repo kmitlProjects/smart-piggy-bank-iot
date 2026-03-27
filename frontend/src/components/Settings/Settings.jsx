@@ -1,23 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './Settings.css';
 import Sidebar from '../Dashboard/Sidebar';
+import {
+  readRefreshIntervalSec,
+  writeRefreshIntervalSec,
+} from '../../utils/dashboardRefresh';
 
-const DEFAULT_REFRESH_INTERVAL_SEC = 5;
-const REFRESH_INTERVAL_STORAGE_KEY = 'smart-piggy-refresh-interval-sec';
-
-function readRefreshInterval() {
-  if (typeof window === 'undefined') {
-    return DEFAULT_REFRESH_INTERVAL_SEC;
-  }
-
-  const storedValue = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
-
-  if (!Number.isFinite(storedValue)) {
-    return DEFAULT_REFRESH_INTERVAL_SEC;
-  }
-
-  return Math.max(1, Math.min(10, storedValue));
-}
+const REFRESH_APPLY_DELAY_MS = 320;
 
 function formatTimestamp(value) {
   if (!value) {
@@ -50,8 +39,9 @@ const Settings = ({ onNavigate }) => {
     esp32Ip: 'Unknown',
     connectionStatus: 'UNKNOWN',
     lastSeen: 'No heartbeat received yet',
+    dashboardRefreshSec: readRefreshIntervalSec(),
   });
-  const [refreshInterval, setRefreshInterval] = useState(readRefreshInterval);
+  const [refreshInterval, setRefreshInterval] = useState(readRefreshIntervalSec);
   const [rfidCards, setRfidCards] = useState([]);
   const [enrollment, setEnrollment] = useState({
     active: false,
@@ -73,8 +63,12 @@ const Settings = ({ onNavigate }) => {
   const [savingCard, setSavingCard] = useState(false);
   const [togglingEnroll, setTogglingEnroll] = useState(false);
   const [workingCardId, setWorkingCardId] = useState(null);
+  const [refreshingConnection, setRefreshingConnection] = useState(false);
+  const [savingInterval, setSavingInterval] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  const intervalTimerRef = useRef(null);
 
   const refreshSettings = async ({ silent = false } = {}) => {
     if (!silent) {
@@ -89,13 +83,19 @@ const Settings = ({ onNavigate }) => {
         fetchJson('/api/rfid/enroll-mode'),
       ]);
 
+      const syncedRefreshInterval = Number.isFinite(Number(deviceRes.dashboard_refresh_sec))
+        ? writeRefreshIntervalSec(deviceRes.dashboard_refresh_sec)
+        : readRefreshIntervalSec();
+
       setDevice({
         wifiSsid: deviceRes.wifi_ssid || 'Unknown',
         localIp: deviceRes.local_ip || '127.0.0.1',
         esp32Ip: deviceRes.esp32_ip || 'Unknown',
         connectionStatus: deviceRes.connection_status || 'UNKNOWN',
         lastSeen: formatTimestamp(deviceRes.last_seen_at),
+        dashboardRefreshSec: syncedRefreshInterval,
       });
+      setRefreshInterval(syncedRefreshInterval);
       setRfidCards(Array.isArray(cardsRes.cards) ? cardsRes.cards : []);
       setEnrollment(enrollmentRes.enrollment || {
         active: false,
@@ -112,6 +112,12 @@ const Settings = ({ onNavigate }) => {
 
   useEffect(() => {
     refreshSettings();
+
+    return () => {
+      if (intervalTimerRef.current) {
+        window.clearTimeout(intervalTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -140,7 +146,64 @@ const Settings = ({ onNavigate }) => {
   }, [enrollment.pending_uid]);
 
   const handleRefreshConnection = async () => {
-    await refreshSettings();
+    setRefreshingConnection(true);
+
+    try {
+      await refreshSettings();
+    } finally {
+      setRefreshingConnection(false);
+    }
+  };
+
+  const applyRefreshInterval = async (intervalSec) => {
+    setSavingInterval(true);
+    setError('');
+
+    try {
+      const response = await fetchJson('/api/device/refresh-interval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: 'esp32',
+          interval_sec: intervalSec,
+        }),
+      });
+
+      const appliedInterval = Number.isFinite(Number(response.dashboard_refresh_sec))
+        ? writeRefreshIntervalSec(response.dashboard_refresh_sec)
+        : writeRefreshIntervalSec(intervalSec);
+
+      setRefreshInterval(appliedInterval);
+      setDevice((prev) => ({
+        ...prev,
+        dashboardRefreshSec: appliedInterval,
+      }));
+    } catch (saveError) {
+      setError(
+        saveError.message
+          || 'Refresh interval was saved in this browser, but the device heartbeat could not be updated.',
+      );
+    } finally {
+      setSavingInterval(false);
+    }
+  };
+
+  const handleIntervalChange = (value) => {
+    const safeValue = writeRefreshIntervalSec(value);
+    setRefreshInterval(safeValue);
+    setDevice((prev) => ({
+      ...prev,
+      dashboardRefreshSec: safeValue,
+    }));
+    setSavingInterval(true);
+
+    if (intervalTimerRef.current) {
+      window.clearTimeout(intervalTimerRef.current);
+    }
+
+    intervalTimerRef.current = window.setTimeout(() => {
+      applyRefreshInterval(safeValue);
+    }, REFRESH_APPLY_DELAY_MS);
   };
 
   const handleUnlock = async () => {
@@ -183,15 +246,6 @@ const Settings = ({ onNavigate }) => {
     }
   };
 
-  const handleIntervalChange = (value) => {
-    const safeValue = Math.max(1, Math.min(10, value));
-    setRefreshInterval(safeValue);
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(safeValue));
-    }
-  };
-
   const handleToggleEnroll = async (active) => {
     setTogglingEnroll(true);
     setError('');
@@ -209,8 +263,8 @@ const Settings = ({ onNavigate }) => {
         last_scanned_at: null,
       });
       setNotice(active
-        ? 'RFID enroll mode enabled. The reader will scan cards without unlocking the vault.'
-        : 'RFID enroll mode disabled. Normal unlock flow is restored.');
+        ? 'Scan mode enabled. RFID taps will be captured for enrollment and will not unlock the vault.'
+        : 'Scan mode disabled. Normal unlock-by-card flow is restored.');
       if (!active) {
         setNewCard((prev) => ({ ...prev, uid: '' }));
       }
@@ -313,17 +367,22 @@ const Settings = ({ onNavigate }) => {
     }
   };
 
+  const isConnected = device.connectionStatus === 'CONNECTED';
+  const scanStatusText = enrollment.last_scanned_at
+    ? `Last scanned: ${formatTimestamp(enrollment.last_scanned_at)}`
+    : 'No card scanned in scan mode yet.';
+
   return (
     <div className="settings-root">
       <Sidebar active="settings" onNavigate={onNavigate} />
 
-      <div className="settings-page">
-        <div className="settings-header">
+      <main className="settings-page">
+        <header className="settings-header">
           <h2>Configuration</h2>
           <div className="settings-desc">
-            Manage device connection, dashboard refresh, and RFID enrollment from the web dashboard.
+            Tune the live dashboard cadence, manage RFID access, and keep service actions in one place.
           </div>
-        </div>
+        </header>
 
         {(error || notice) && (
           <div className={`settings-banner ${error ? 'is-error' : 'is-success'}`}>
@@ -331,238 +390,308 @@ const Settings = ({ onNavigate }) => {
           </div>
         )}
 
-        <div className="settings-grid">
-          <section className="settings-card">
-            <div className="settings-card-title">
-              <img className="settings-card-icon" src="/icon/sectionSettingPage/Icon.svg" alt="Device" />
-              <span>Device Connection</span>
-            </div>
-            <div className="settings-card-fields">
-              <div className="settings-label">Wi-Fi Network</div>
-              <div className="settings-input">{device.wifiSsid}</div>
-              <div className="settings-label">Backend Host IP</div>
-              <div className="settings-input">{device.localIp}</div>
-              <div className="settings-label">ESP32 Device IP</div>
-              <div className="settings-input">{device.esp32Ip}</div>
-              <div className="settings-label">Connection Status</div>
-              <div className="settings-input">{device.connectionStatus}</div>
-              <div className="settings-label">Last Heartbeat</div>
-              <div className="settings-input">{device.lastSeen}</div>
-            </div>
-            <button className="settings-btn" onClick={handleRefreshConnection}>
-              Refresh Connection
-            </button>
-          </section>
+        <div className="settings-shell">
+          <div className="settings-overview-grid">
+            <section className="settings-card settings-card-device">
+              <div className="settings-card-head">
+                <div className="settings-card-title">
+                  <img className="settings-card-icon" src="/icon/sectionSettingPage/Icon.svg" alt="Device" />
+                  <span>Device Connection</span>
+                </div>
+                <button
+                  type="button"
+                  className="settings-btn small secondary"
+                  onClick={handleRefreshConnection}
+                  disabled={refreshingConnection}
+                >
+                  {refreshingConnection ? 'Syncing...' : 'Sync now'}
+                </button>
+              </div>
 
-          <section className="settings-card">
-            <div className="settings-card-title">
-              <img className="settings-card-icon" src="/icon/sectionSettingPage/reflesh.svg" alt="Refresh" />
-              <span>Dashboard Refresh Interval</span>
-              <span className="settings-interval-value">{refreshInterval}s</span>
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={10}
-              value={refreshInterval}
-              onChange={(event) => handleIntervalChange(Number(event.target.value))}
-            />
-            <div className="settings-interval-desc">
-              Saved locally in this browser. The dashboard reads this value each time the dashboard page opens.
-            </div>
-          </section>
+              <div className="settings-status-strip">
+                <span className={`settings-pill ${isConnected ? 'is-connected' : 'is-disconnected'}`}>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+                <span className="settings-status-copy">Last heartbeat: {device.lastSeen}</span>
+              </div>
 
-          <section className="settings-card settings-card-wide">
-            <div className="settings-card-title">
-              <img className="settings-card-icon" src="/icon/sectionSettingPage/lockWarning.svg" alt="RFID" />
-              <span>RFID Access Control</span>
+              <div className="settings-detail-grid">
+                <div className="settings-detail-item">
+                  <span className="settings-label">Wi-Fi network</span>
+                  <span className="settings-detail-value">{device.wifiSsid}</span>
+                </div>
+                <div className="settings-detail-item">
+                  <span className="settings-label">Backend host IP</span>
+                  <span className="settings-detail-value">{device.localIp}</span>
+                </div>
+                <div className="settings-detail-item">
+                  <span className="settings-label">ESP32 device IP</span>
+                  <span className="settings-detail-value">{device.esp32Ip}</span>
+                </div>
+                <div className="settings-detail-item">
+                  <span className="settings-label">Current heartbeat cadence</span>
+                  <span className="settings-detail-value">{device.dashboardRefreshSec}s</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="settings-card settings-card-refresh">
+              <div className="settings-card-head">
+                <div className="settings-card-title">
+                  <img className="settings-card-icon" src="/icon/sectionSettingPage/reflesh.svg" alt="Refresh" />
+                  <span>Dashboard Refresh Interval</span>
+                </div>
+                <div className="settings-interval-meta">
+                  <span className="settings-interval-value">{refreshInterval}s</span>
+                  <span className={`settings-inline-state ${savingInterval ? 'is-pending' : 'is-live'}`}>
+                    {savingInterval ? 'Applying...' : 'Live'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="settings-interval-copy">
+                <p>Controls how often the dashboard requests fresh backend data.</p>
+                <p>This value is also sent to the ESP32 heartbeat interval. The board needs the latest firmware to acknowledge it.</p>
+              </div>
+
+              <input
+                className="settings-slider"
+                type="range"
+                min={1}
+                max={10}
+                value={refreshInterval}
+                onChange={(event) => handleIntervalChange(Number(event.target.value))}
+              />
+
+              <div className="settings-slider-scale" aria-hidden="true">
+                <span>1s</span>
+                <span>5s</span>
+                <span>10s</span>
+              </div>
+            </section>
+          </div>
+
+          <section className="settings-card settings-card-wide settings-card-rfid">
+            <div className="settings-card-head">
+              <div className="settings-card-title">
+                <img className="settings-card-icon" src="/icon/sectionSettingPage/lockWarning.svg" alt="RFID" />
+                <span>RFID Access Control</span>
+              </div>
+              <span className={`settings-pill ${enrollment.active ? 'is-active' : 'is-muted'}`}>
+                {enrollment.active ? 'Scan mode on' : 'Scan mode off'}
+              </span>
             </div>
+
             <div className="settings-note">
-              Use scan mode when registering a new card. While scan mode is active, RFID scans are captured for enrollment and will not unlock the vault.
+              When scan mode is on, RFID taps are captured for enrollment and unlock-by-card is paused temporarily.
             </div>
 
-            <div className={`settings-enroll-panel ${enrollment.active ? 'is-active' : ''}`}>
-              <div className="settings-enroll-text">
-                <div className="settings-enroll-title">
-                  {enrollment.active ? 'Enrollment Mode Active' : 'Enrollment Mode Inactive'}
-                </div>
-                <div className="settings-enroll-desc">
-                  {enrollment.active
-                    ? 'Tap an RFID card on the reader. The latest scanned UID will appear below.'
-                    : 'Start scan mode to temporarily pause unlock-by-card and capture the next RFID UID.'}
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`settings-btn small ${enrollment.active ? 'danger' : ''}`}
-                onClick={() => handleToggleEnroll(!enrollment.active)}
-                disabled={togglingEnroll}
-              >
-                {togglingEnroll
-                  ? 'Updating...'
-                  : enrollment.active
-                    ? 'Stop Scan Mode'
-                    : 'Start Scan Mode'}
-              </button>
-            </div>
-
-            <div className="settings-scan-result">
-              <div className="settings-label">Latest Scanned UID</div>
-              <div className="settings-input">{enrollment.pending_uid || 'Waiting for RFID scan...'}</div>
-              <div className="settings-scan-meta">
-                {enrollment.last_scanned_at
-                  ? `Last scanned: ${formatTimestamp(enrollment.last_scanned_at)}`
-                  : 'No card scanned in enrollment mode yet.'}
-              </div>
-            </div>
-
-            <div className="settings-card-form">
-              <div>
-                <div className="settings-label">Card UID</div>
-                <input
-                  className="settings-textbox"
-                  value={newCard.uid}
-                  onChange={(event) => setNewCard((prev) => ({ ...prev, uid: event.target.value }))}
-                  placeholder="[182, 188, 21, 6, 25]"
-                />
-              </div>
-              <div>
-                <div className="settings-label">Owner Name</div>
-                <input
-                  className="settings-textbox"
-                  value={newCard.ownerName}
-                  onChange={(event) => setNewCard((prev) => ({ ...prev, ownerName: event.target.value }))}
-                  placeholder="Student Card / Owner Name"
-                />
-              </div>
-            </div>
-
-            <div className="settings-actions">
-              <button
-                type="button"
-                className="settings-btn small"
-                onClick={() => setNewCard((prev) => ({ ...prev, uid: enrollment.pending_uid || prev.uid }))}
-                disabled={!enrollment.pending_uid}
-              >
-                Use Scanned UID
-              </button>
-              <button
-                type="button"
-                className="settings-btn small"
-                onClick={handleCreateCard}
-                disabled={savingCard}
-              >
-                {savingCard ? 'Saving...' : 'Add Card'}
-              </button>
-            </div>
-
-            <div className="settings-list">
-              {rfidCards.length === 0 ? (
-                <div className="settings-empty">No active RFID cards in backend yet.</div>
-              ) : (
-                rfidCards.map((card) => {
-                  const isEditing = editingCardId === card.id;
-                  const isWorking = workingCardId === card.id;
-
-                  return (
-                    <div className="settings-card-row" key={card.id}>
-                      <div className="settings-card-row-main">
-                        {isEditing ? (
-                          <>
-                            <input
-                              className="settings-textbox"
-                              value={editingCard.uid}
-                              onChange={(event) => setEditingCard((prev) => ({ ...prev, uid: event.target.value }))}
-                              placeholder="RFID UID"
-                            />
-                            <input
-                              className="settings-textbox"
-                              value={editingCard.ownerName}
-                              onChange={(event) => setEditingCard((prev) => ({ ...prev, ownerName: event.target.value }))}
-                              placeholder="Owner name"
-                            />
-                          </>
-                        ) : (
-                          <>
-                            <div className="settings-card-row-title">
-                              {card.owner_name || 'Unnamed card'}
-                            </div>
-                            <div className="settings-card-row-subtitle">{card.uid}</div>
-                          </>
-                        )}
-                      </div>
-                      <div className="settings-card-row-actions">
-                        {isEditing ? (
-                          <>
-                            <button
-                              type="button"
-                              className="settings-btn small"
-                              onClick={() => handleSaveCardEdit(card.id)}
-                              disabled={isWorking}
-                            >
-                              {isWorking ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              type="button"
-                              className="settings-btn small secondary"
-                              onClick={cancelEditingCard}
-                              disabled={isWorking}
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              className="settings-btn small secondary"
-                              onClick={() => startEditingCard(card)}
-                              disabled={isWorking}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="settings-btn small danger"
-                              onClick={() => handleDeleteCard(card.id)}
-                              disabled={isWorking}
-                            >
-                              {isWorking ? 'Removing...' : 'Delete'}
-                            </button>
-                          </>
-                        )}
-                      </div>
+            <div className="settings-rfid-grid">
+              <div className="settings-rfid-main">
+                <div className={`settings-enroll-panel ${enrollment.active ? 'is-active' : ''}`}>
+                  <div className="settings-enroll-text">
+                    <div className="settings-enroll-title">
+                      {enrollment.active ? 'Reader is waiting for a card' : 'Start scan mode before adding a new card'}
                     </div>
-                  );
-                })
-              )}
+                    <div className="settings-enroll-desc">
+                      {enrollment.active
+                        ? 'Tap a card on the ESP32 reader. The captured UID will fill the form below automatically.'
+                        : 'Enable scan mode when you want to capture a new UID without triggering a vault unlock.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`settings-btn small ${enrollment.active ? 'danger' : ''}`}
+                    onClick={() => handleToggleEnroll(!enrollment.active)}
+                    disabled={togglingEnroll}
+                  >
+                    {togglingEnroll
+                      ? 'Updating...'
+                      : enrollment.active
+                        ? 'Stop scan mode'
+                        : 'Start scan mode'}
+                  </button>
+                </div>
+
+                <div className="settings-scan-result">
+                  <div className="settings-field-head">
+                    <span className="settings-label">Latest scanned UID</span>
+                    <span className="settings-scan-meta">{scanStatusText}</span>
+                  </div>
+                  <div className="settings-display-box">
+                    {enrollment.pending_uid || 'Waiting for RFID scan...'}
+                  </div>
+                </div>
+
+                <div className="settings-card-form">
+                  <div>
+                    <div className="settings-label">Card UID</div>
+                    <input
+                      className="settings-textbox"
+                      value={newCard.uid}
+                      onChange={(event) => setNewCard((prev) => ({ ...prev, uid: event.target.value }))}
+                      placeholder="[182, 188, 21, 6, 25]"
+                    />
+                  </div>
+                  <div>
+                    <div className="settings-label">Owner name</div>
+                    <input
+                      className="settings-textbox"
+                      value={newCard.ownerName}
+                      onChange={(event) => setNewCard((prev) => ({ ...prev, ownerName: event.target.value }))}
+                      placeholder="Student card / owner name"
+                    />
+                  </div>
+                </div>
+
+                <div className="settings-form-actions">
+                  <button
+                    type="button"
+                    className="settings-btn small"
+                    onClick={handleCreateCard}
+                    disabled={savingCard}
+                  >
+                    {savingCard ? 'Saving...' : 'Add card'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-rfid-side">
+                <div className="settings-side-head">
+                  <div className="settings-side-title">Authorized cards</div>
+                  <div className="settings-side-count">{rfidCards.length} active</div>
+                </div>
+
+                <div className="settings-list">
+                  {rfidCards.length === 0 ? (
+                    <div className="settings-empty">No active RFID cards in backend yet.</div>
+                  ) : (
+                    rfidCards.map((card) => {
+                      const isEditing = editingCardId === card.id;
+                      const isWorking = workingCardId === card.id;
+
+                      return (
+                        <div className="settings-card-row" key={card.id}>
+                          <div className="settings-card-row-main">
+                            {isEditing ? (
+                              <>
+                                <input
+                                  className="settings-textbox"
+                                  value={editingCard.uid}
+                                  onChange={(event) => setEditingCard((prev) => ({ ...prev, uid: event.target.value }))}
+                                  placeholder="RFID UID"
+                                />
+                                <input
+                                  className="settings-textbox"
+                                  value={editingCard.ownerName}
+                                  onChange={(event) => setEditingCard((prev) => ({ ...prev, ownerName: event.target.value }))}
+                                  placeholder="Owner name"
+                                />
+                              </>
+                            ) : (
+                              <>
+                                <div className="settings-card-row-title">
+                                  {card.owner_name || 'Unnamed card'}
+                                </div>
+                                <div className="settings-card-row-subtitle">{card.uid}</div>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="settings-card-row-actions">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="settings-btn small"
+                                  onClick={() => handleSaveCardEdit(card.id)}
+                                  disabled={isWorking}
+                                >
+                                  {isWorking ? 'Saving...' : 'Save'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="settings-btn small secondary"
+                                  onClick={cancelEditingCard}
+                                  disabled={isWorking}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="settings-btn small secondary"
+                                  onClick={() => startEditingCard(card)}
+                                  disabled={isWorking}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="settings-btn small danger"
+                                  onClick={() => handleDeleteCard(card.id)}
+                                  disabled={isWorking}
+                                >
+                                  {isWorking ? 'Removing...' : 'Delete'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 
-          <section className="settings-card settings-card-danger">
-            <div className="settings-card-title danger">
-              <img className="settings-card-icon danger" src="/icon/sectionSettingPage/warning.svg" alt="Danger" />
-              <span>Danger Zone</span>
+          <section className="settings-card settings-card-wide settings-card-maintenance">
+            <div className="settings-card-head">
+              <div className="settings-card-title">
+                <img className="settings-card-icon" src="/icon/sectionSettingPage/unlock.svg" alt="Manual control" />
+                <span>Manual Vault Control</span>
+              </div>
+              <span className={`settings-pill ${isUnlocked ? 'is-active' : 'is-muted'}`}>
+                {isUnlocked ? 'Unlocked' : 'Locked'}
+              </span>
             </div>
-            <div className="settings-danger-desc">
-              Resetting the counter clears dashboard session data. Authorized RFID cards remain stored.
+
+            <div className="settings-note">
+              Use this action when you need a one-time web unlock. It does not replace RFID authorization.
             </div>
+
+            <div className="settings-maintenance-actions">
+              <button
+                className={`settings-btn unlock ${isUnlocked ? 'unlocked' : ''}`}
+                onClick={handleUnlock}
+                disabled={isUnlocking}
+              >
+                {isUnlocking ? 'Unlocking...' : isUnlocked ? 'Vault unlocked' : 'Unlock vault'}
+              </button>
+            </div>
+          </section>
+
+          <section className="settings-card settings-card-wide settings-card-danger">
+            <div className="settings-card-head">
+              <div className="settings-card-title danger">
+                <img className="settings-card-icon" src="/icon/sectionSettingPage/warning.svg" alt="Danger" />
+                <span>Danger Zone</span>
+              </div>
+            </div>
+
+            <div className="settings-danger-copy">
+              Resetting the counter clears dashboard session data and recent device state. Authorized RFID cards stay stored.
+            </div>
+
             <button className="settings-btn danger" onClick={handleResetCounter} disabled={resetting}>
               {resetting ? 'Resetting...' : 'Reset coin counter'}
             </button>
           </section>
-
-          <section className="settings-unlock-section">
-            <button
-              className={`settings-btn unlock ${isUnlocked ? 'unlocked' : ''}`}
-              onClick={handleUnlock}
-              disabled={isUnlocking}
-            >
-              {isUnlocking ? 'Unlocking...' : isUnlocked ? 'Vault Unlocked' : 'Unlock vault'}
-            </button>
-          </section>
         </div>
-      </div>
+      </main>
     </div>
   );
 };

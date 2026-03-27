@@ -16,16 +16,19 @@ from db import (
     get_connectivity_history,
     get_connectivity_latest,
     get_device_runtime,
+    get_device_settings,
     get_latest_status,
     get_rfid_enrollment_state,
     init_db,
     list_rfid_cards,
     process_connectivity_timeout,
     reset_database,
+    set_device_refresh_interval,
     set_rfid_enrollment_state,
     update_rfid_card,
 )
 from mqtt_commands import (
+    publish_dashboard_interval_command,
     publish_reset_command,
     publish_rfid_enroll_command,
     publish_unlock_command,
@@ -130,8 +133,10 @@ def create_app() -> Flask:
     def device_info():
         process_connectivity_timeout(CONNECTIVITY_TIMEOUT_SEC, device_id="esp32")
         runtime = get_device_runtime()
+        device_settings = get_device_settings()
         latest_status = get_latest_status() or {}
         connectivity = get_connectivity_latest(device_id="esp32")
+        refresh_interval_ms = int(device_settings.get("dashboard_update_ms") or 5000)
 
         return jsonify({
             "device_id": latest_status.get("device_id") or runtime.get("device_id") or "esp32",
@@ -141,7 +146,36 @@ def create_app() -> Flask:
             "connection_status": connectivity.get("current_state", "UNKNOWN"),
             "wifi_connected": bool(connectivity.get("is_connected", False)),
             "last_seen_at": connectivity.get("last_seen_at"),
+            "dashboard_refresh_sec": max(1, min(10, refresh_interval_ms // 1000)),
             "backend_host": socket.gethostname(),
+        })
+
+    @app.post("/api/device/refresh-interval")
+    def update_refresh_interval():
+        payload = request.get_json(silent=True) or {}
+        device_id = payload.get("device_id", "esp32")
+
+        try:
+            refresh_interval_sec = int(payload.get("interval_sec", 5))
+        except Exception:
+            refresh_interval_sec = 5
+
+        refresh_interval_sec = max(1, min(10, refresh_interval_sec))
+        sent = publish_dashboard_interval_command(device_id=device_id, interval_sec=refresh_interval_sec)
+        if not sent:
+            return jsonify({
+                "error": "failed to send refresh interval command to device",
+                "instance": _instance_info(),
+            }), 503
+
+        state = set_device_refresh_interval(device_id=device_id, dashboard_update_ms=refresh_interval_sec * 1000)
+        return jsonify({
+            "command_sent": True,
+            "device_id": device_id,
+            "dashboard_refresh_sec": refresh_interval_sec,
+            "dashboard_update_ms": state.get("dashboard_update_ms", refresh_interval_sec * 1000),
+            "updated_at": state.get("updated_at"),
+            "instance": _instance_info(),
         })
 
     @app.get("/api/connectivity/latest")

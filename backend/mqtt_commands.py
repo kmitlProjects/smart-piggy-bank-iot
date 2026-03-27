@@ -52,3 +52,18 @@ def publish_rfid_enroll_command(device_id: str = "esp32", enabled: bool = False)
         "device_id": device_id,
         "enabled": bool(enabled),
     })
+
+
+def publish_dashboard_interval_command(device_id: str = "esp32", interval_sec: int = 5) -> bool:
+    try:
+        safe_interval_sec = int(interval_sec)
+    except Exception:
+        safe_interval_sec = 5
+
+    safe_interval_sec = max(1, min(10, safe_interval_sec))
+
+    return _publish_command({
+        "action": "set_dashboard_interval",
+        "device_id": device_id,
+        "interval_ms": safe_interval_sec * 1000,
+    })

@@ -61,7 +61,7 @@ RFID_POLL_INTERVAL_MS = 150  # poll RFID every 150ms; avoids hammering SPI bus
 RFID_RECOVERY_IDLE_MS = 15000
 DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
-DASHBOARD_UPDATE_MS = 5000
+DEFAULT_DASHBOARD_UPDATE_MS = 5000
 COIN_NOISE_GUARD_MS = 300
 BIN_EMPTY_DISTANCE_CM = 17.5
 BIN_FULL_DISTANCE_CM = 4.9
@@ -132,6 +132,7 @@ def run():
     oled = init_display()
     device_ip = None
     enroll_mode = False
+    dashboard_update_ms = DEFAULT_DASHBOARD_UPDATE_MS
 
     # ===== WEB STATUS FUNCTION =====
     def current_payload(heartbeat_reason="HEARTBEAT", rfid_scan_uid=None, rfid_scan_source=None):
@@ -147,6 +148,7 @@ def run():
             "fill_percent": fill_percent,
             "wifi_ssid": WIFI_SSID,
             "esp32_ip": device_ip,
+            "dashboard_update_ms": dashboard_update_ms,
             "heartbeat_reason": heartbeat_reason,
         }
         if rfid_scan_uid is not None:
@@ -195,7 +197,7 @@ def run():
     )
 
     def on_mqtt_command(topic, payload):
-        nonlocal enroll_mode, is_locked, unlock_started_ms
+        nonlocal enroll_mode, is_locked, unlock_started_ms, dashboard_update_ms
         try:
             action = None
             if isinstance(payload, dict):
@@ -246,6 +248,18 @@ def run():
                 coins.suppress_for(COIN_NOISE_GUARD_MS)
                 mqtt.publish(current_payload(heartbeat_reason="ENROLL_MODE_ON" if enabled else "ENROLL_MODE_OFF"))
                 print("[RFID ENROLL MODE]", "enabled" if enabled else "disabled")
+
+            elif action == "set_dashboard_interval":
+                requested_ms = DEFAULT_DASHBOARD_UPDATE_MS
+                if isinstance(payload, dict):
+                    try:
+                        requested_ms = int(payload.get("interval_ms", DEFAULT_DASHBOARD_UPDATE_MS))
+                    except Exception:
+                        requested_ms = DEFAULT_DASHBOARD_UPDATE_MS
+
+                dashboard_update_ms = max(1000, min(10000, requested_ms))
+                mqtt.publish(current_payload(heartbeat_reason="INTERVAL_UPDATED"))
+                print("[DASHBOARD INTERVAL]", dashboard_update_ms, "ms")
         except Exception as exc:
             print(f"[MQTT CMD ERROR] {exc}")
 
@@ -408,8 +422,8 @@ def run():
         if wlan is not None:
             device_ip = ip_address(wlan)
 
-        # Publish to MQTT every DASHBOARD_UPDATE_MS
-        if time.ticks_diff(now, last_mqtt_publish_ms) >= DASHBOARD_UPDATE_MS:
+        # Publish to MQTT using the current dashboard update interval.
+        if time.ticks_diff(now, last_mqtt_publish_ms) >= dashboard_update_ms:
             last_mqtt_publish_ms = now
             payload = current_payload(heartbeat_reason="PERIODIC")
             sent = mqtt.publish(payload)

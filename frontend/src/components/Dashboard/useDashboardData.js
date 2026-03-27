@@ -1,19 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  DEFAULT_REFRESH_INTERVAL_SEC,
+  REFRESH_INTERVAL_EVENT,
+  REFRESH_INTERVAL_STORAGE_KEY,
+  clampRefreshIntervalSec,
+  readRefreshIntervalSec,
+} from '../../utils/dashboardRefresh';
 
-const DEFAULT_POLL_INTERVAL_SEC = 5;
-const REFRESH_INTERVAL_STORAGE_KEY = 'smart-piggy-refresh-interval-sec';
-
-function getPollIntervalMs() {
-  if (typeof window === 'undefined') {
-    return DEFAULT_POLL_INTERVAL_SEC * 1000;
-  }
-
-  const rawValue = Number(window.localStorage.getItem(REFRESH_INTERVAL_STORAGE_KEY));
-  const safeSeconds = Number.isFinite(rawValue)
-    ? Math.max(1, Math.min(10, rawValue))
-    : DEFAULT_POLL_INTERVAL_SEC;
-
-  return safeSeconds * 1000;
+function getPollIntervalMs(value = readRefreshIntervalSec()) {
+  return clampRefreshIntervalSec(value) * 1000;
 }
 
 async function fetchJson(path, options = {}) {
@@ -50,6 +45,20 @@ export default function useDashboardData() {
   const pollingRef = useRef(null);
   const followUpRefreshRef = useRef(null);
   const inFlightRef = useRef(false);
+
+  const restartPolling = (value) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (pollingRef.current) {
+      window.clearInterval(pollingRef.current);
+    }
+
+    pollingRef.current = window.setInterval(() => {
+      refresh();
+    }, getPollIntervalMs(value));
+  };
 
   const refresh = async ({ showLoading = false } = {}) => {
     if (inFlightRef.current) {
@@ -143,23 +152,45 @@ export default function useDashboardData() {
   };
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
     mountedRef.current = true;
     refresh({ showLoading: true });
+    restartPolling();
 
-    pollingRef.current = setInterval(() => {
+    const handleRefreshIntervalChange = (event) => {
+      const nextValue = clampRefreshIntervalSec(event?.detail ?? readRefreshIntervalSec());
+      window.localStorage.setItem(REFRESH_INTERVAL_STORAGE_KEY, String(nextValue));
+      restartPolling(nextValue);
       refresh();
-    }, getPollIntervalMs());
+    };
+
+    const handleStorageSync = (event) => {
+      if (event.key !== REFRESH_INTERVAL_STORAGE_KEY) {
+        return;
+      }
+
+      handleRefreshIntervalChange({ detail: event.newValue ?? DEFAULT_REFRESH_INTERVAL_SEC });
+    };
+
+    window.addEventListener(REFRESH_INTERVAL_EVENT, handleRefreshIntervalChange);
+    window.addEventListener('storage', handleStorageSync);
 
     return () => {
       mountedRef.current = false;
 
       if (pollingRef.current) {
-        clearInterval(pollingRef.current);
+        window.clearInterval(pollingRef.current);
       }
 
       if (followUpRefreshRef.current) {
-        clearTimeout(followUpRefreshRef.current);
+        window.clearTimeout(followUpRefreshRef.current);
       }
+
+      window.removeEventListener(REFRESH_INTERVAL_EVENT, handleRefreshIntervalChange);
+      window.removeEventListener('storage', handleStorageSync);
     };
   }, []);
 
