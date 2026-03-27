@@ -4,7 +4,14 @@ import socket
 import threading
 import time
 
-from config import API_HOST, API_PORT, CONNECTIVITY_TIMEOUT_SEC, FRONTEND_PORT
+from config import (
+    API_HOST,
+    API_PORT,
+    CONNECTIVITY_TIMEOUT_SEC,
+    FRONTEND_PORT,
+    PUBLIC_DASHBOARD_HOST,
+    PUBLIC_DASHBOARD_PORT,
+)
 from db import (
     add_rfid_card,
     check_access,
@@ -81,6 +88,13 @@ def _bool_arg(value, default=False):
     return default
 
 
+def _public_http_url(host: str, port: int) -> str | None:
+    host_text = (host or "").strip()
+    if not host_text:
+        return None
+    return f"http://{host_text}:{int(port)}"
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
 
@@ -137,16 +151,22 @@ def create_app() -> Flask:
         latest_status = get_latest_status() or {}
         connectivity = get_connectivity_latest(device_id="esp32")
         refresh_interval_ms = int(device_settings.get("dashboard_update_ms") or 5000)
+        dashboard_url = _public_http_url(PUBLIC_DASHBOARD_HOST, PUBLIC_DASHBOARD_PORT)
+        api_url = _public_http_url(PUBLIC_DASHBOARD_HOST, API_PORT)
 
         return jsonify({
             "device_id": latest_status.get("device_id") or runtime.get("device_id") or "esp32",
             "wifi_ssid": runtime.get("wifi_ssid") or os.getenv("WIFI_SSID", "Unknown"),
             "local_ip": _best_effort_local_ip(),
+            "backend_container_ip": _best_effort_local_ip(),
             "esp32_ip": runtime.get("esp32_ip") or latest_status.get("esp32_ip") or "Unknown",
             "connection_status": connectivity.get("current_state", "UNKNOWN"),
             "wifi_connected": bool(connectivity.get("is_connected", False)),
             "last_seen_at": connectivity.get("last_seen_at"),
             "dashboard_refresh_sec": max(1, min(10, refresh_interval_ms // 1000)),
+            "dashboard_host": PUBLIC_DASHBOARD_HOST or None,
+            "dashboard_url": dashboard_url,
+            "api_url": api_url,
             "backend_host": socket.gethostname(),
         })
 
