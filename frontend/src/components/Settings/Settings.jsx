@@ -299,7 +299,7 @@ const Settings = ({ onNavigate }) => {
         last_scanned_at: null,
       });
       setNotice(active
-        ? 'Scan mode enabled. RFID taps will be captured for enrollment and will not unlock the vault.'
+        ? 'Scan mode enabled. RFID taps will be captured for enrollment and will not unlock the vault until you stop scan mode or save a card.'
         : 'Scan mode disabled. Normal unlock-by-card flow is restored.');
       if (!active) {
         setNewCard((prev) => ({ ...prev, uid: '' }));
@@ -535,7 +535,7 @@ const Settings = ({ onNavigate }) => {
               </div>
 
             <div className="settings-note">
-              When scan mode is on, RFID taps are captured for enrollment and unlock-by-card is paused temporarily.
+              When scan mode is on, RFID taps are captured for enrollment and unlock-by-card stays paused until you stop scan mode or save a card.
             </div>
 
             <div className="settings-rfid-grid">
@@ -547,7 +547,7 @@ const Settings = ({ onNavigate }) => {
                     </div>
                     <div className="settings-enroll-desc">
                       {enrollment.active
-                        ? 'Tap a card on the ESP32 reader. The captured UID will fill the form below automatically.'
+                        ? 'Tap cards on the ESP32 reader. Each captured UID will fill the form below and scan mode will stay active until you stop it or save a card.'
                         : 'Enable scan mode when you want to capture a new UID without triggering a vault unlock.'}
                     </div>
                   </div>

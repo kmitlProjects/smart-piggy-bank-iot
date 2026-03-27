@@ -58,7 +58,8 @@ UNLOCK_TIME_MS = 5000
 RFID_COOLDOWN_MS = 1200
 RFID_POLL_INTERVAL_MS = 150  # poll RFID every 150ms; avoids hammering SPI bus
 RFID_RECOVERY_IDLE_MS = 4000
-RFID_ENROLL_TIMEOUT_MS = 30000
+# Keep scan mode under frontend control. Set to 0 to disable device-side auto-timeout.
+RFID_ENROLL_TIMEOUT_MS = 0
 DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
 DEFAULT_DASHBOARD_UPDATE_MS = 5000
@@ -239,7 +240,7 @@ def run():
                     enabled = bool(payload.get("enabled", False))
 
                 enroll_mode = enabled
-                enroll_started_ms = time.ticks_ms() if enabled else None
+                enroll_started_ms = time.ticks_ms() if enabled and RFID_ENROLL_TIMEOUT_MS > 0 else None
                 lock.lock()
                 is_locked = True
                 unlock_started_ms = None
@@ -296,6 +297,8 @@ def run():
                         pulse_output(led, 80)
                         time.sleep_ms(60)
                         pulse_output(led, 80)
+                        if RFID_ENROLL_TIMEOUT_MS > 0:
+                            enroll_started_ms = now
                         mqtt.publish(
                             current_payload(
                                 heartbeat_reason="RFID_ENROLL_SCAN",
@@ -303,12 +306,6 @@ def run():
                                 rfid_scan_source="esp32_enroll",
                             )
                         )
-                        # Keep enroll mode one-shot on the device so a lost
-                        # "disable enroll mode" command cannot leave the board
-                        # stuck in scan-only behavior.
-                        enroll_mode = False
-                        enroll_started_ms = None
-                        mqtt.publish(current_payload(heartbeat_reason="ENROLL_MODE_AUTO_OFF"))
                         continue
 
                     # RFID card detected - authorize first, then unlock only if allowed.
@@ -358,7 +355,7 @@ def run():
 
         mqtt.check_message()
 
-        if enroll_mode and enroll_started_ms is not None:
+        if RFID_ENROLL_TIMEOUT_MS > 0 and enroll_mode and enroll_started_ms is not None:
             if time.ticks_diff(now, enroll_started_ms) >= RFID_ENROLL_TIMEOUT_MS:
                 enroll_mode = False
                 enroll_started_ms = None

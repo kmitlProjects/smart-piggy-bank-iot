@@ -227,7 +227,7 @@ export default function Statistics({ onNavigate }) {
     ? `${formatSignedPercent(monthlyChange)} vs previous 30 days`
     : (summary?.coins_last_30d > 0 ? 'First 30-day window recorded' : 'Waiting for coin activity');
 
-  const mostFrequentCoinText = mostFrequentCoinValue ? `฿${mostFrequentCoinValue}` : 'No coin yet';
+  const mostFrequentCoinText = mostFrequentCoinValue ? `฿${mostFrequentCoinValue}` : 'N/A';
   const statsReady = Boolean(stats);
   const hasCoinData = Boolean(meta?.has_coin_data);
   const locked = device.is_locked === undefined ? true : Boolean(device.is_locked);
