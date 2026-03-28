@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS activity_events (
     action TEXT NOT NULL,
     status TEXT NOT NULL,
     source TEXT NOT NULL,
+    command_id TEXT,
     uid TEXT,
     reason TEXT,
     details TEXT,
@@ -136,6 +137,15 @@ def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.executescript(SCHEMA_SQL)
+        _ensure_activity_events_command_id(conn)
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_events_command_id_unique
+            ON activity_events(command_id)
+            WHERE command_id IS NOT NULL
+            """
+        )
+        _dedupe_legacy_command_activity_events(conn)
         _prune_all_connectivity_events(conn, keep_latest=CONNECTIVITY_EVENTS_LIMIT)
         conn.commit()
     finally:
@@ -222,6 +232,33 @@ def _prune_all_connectivity_events(conn: sqlite3.Connection, keep_latest: int) -
         device_id = row[0]
         if device_id:
             _prune_connectivity_events(conn, device_id=device_id, keep_latest=keep_latest)
+
+
+def _ensure_activity_events_command_id(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(activity_events)").fetchall()
+    column_names = {row[1] for row in columns}
+    if "command_id" not in column_names:
+        conn.execute("ALTER TABLE activity_events ADD COLUMN command_id TEXT")
+
+
+def _dedupe_legacy_command_activity_events(conn: sqlite3.Connection) -> int:
+    cursor = conn.execute(
+        """
+        DELETE FROM activity_events
+        WHERE source = 'device'
+          AND action IN ('WEB_UNLOCK', 'RESET_DATA')
+          AND command_id IS NULL
+          AND id NOT IN (
+              SELECT MIN(id)
+              FROM activity_events
+              WHERE source = 'device'
+                AND action IN ('WEB_UNLOCK', 'RESET_DATA')
+                AND command_id IS NULL
+              GROUP BY event_type, action, status, source, uid, reason, details, created_at
+          )
+        """
+    )
+    return cursor.rowcount
 
 
 def mark_device_seen(device_id: str, reason: str = "HEARTBEAT") -> None:
@@ -878,21 +915,25 @@ def log_activity_event(
     action: str,
     status: str,
     source: str,
+    command_id: Optional[str] = None,
     uid: Any = None,
     reason: Optional[str] = None,
     details: Optional[str] = None,
-) -> None:
+) -> bool:
     uid_text = _uid_to_text(uid) if uid is not None else None
     conn = _conn()
     try:
-        conn.execute(
+        cursor = conn.execute(
             """
-            INSERT INTO activity_events (event_type, action, status, source, uid, reason, details, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO activity_events (
+                event_type, action, status, source, command_id, uid, reason, details, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (event_type, action, status, source, uid_text, reason, details, _now_iso()),
+            (event_type, action, status, source, command_id, uid_text, reason, details, _now_iso()),
         )
         conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -902,7 +943,7 @@ def get_activity_history(limit: int = 100) -> List[Dict[str, Any]]:
     try:
         rows = conn.execute(
             """
-            SELECT id, event_type, action, status, source, uid, reason, details, created_at
+            SELECT id, event_type, action, status, source, command_id, uid, reason, details, created_at
             FROM activity_events
             ORDER BY id DESC
             LIMIT ?

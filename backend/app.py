@@ -701,7 +701,7 @@ def create_app() -> Flask:
             refresh_interval_sec = 5
 
         refresh_interval_sec = max(1, min(10, refresh_interval_sec))
-        sent = publish_dashboard_interval_command(device_id=device_id, interval_sec=refresh_interval_sec)
+        sent, command_id = publish_dashboard_interval_command(device_id=device_id, interval_sec=refresh_interval_sec)
         if not sent:
             return jsonify({
                 "error": "failed to send refresh interval command to device",
@@ -711,6 +711,7 @@ def create_app() -> Flask:
         state = set_device_refresh_interval(device_id=device_id, dashboard_update_ms=refresh_interval_sec * 1000)
         return jsonify({
             "command_sent": True,
+            "command_id": command_id,
             "device_id": device_id,
             "dashboard_refresh_sec": refresh_interval_sec,
             "dashboard_update_ms": state.get("dashboard_update_ms", refresh_interval_sec * 1000),
@@ -851,7 +852,7 @@ def create_app() -> Flask:
     def set_rfid_enroll_mode():
         payload = request.get_json(silent=True) or {}
         active = _bool_arg(payload.get("active"), default=False)
-        sent = publish_rfid_enroll_command(device_id=payload.get("device_id", "esp32"), enabled=active)
+        sent, command_id = publish_rfid_enroll_command(device_id=payload.get("device_id", "esp32"), enabled=active)
         if not sent:
             return jsonify({"error": "failed to send enroll command to device"}), 503
 
@@ -874,7 +875,7 @@ def create_app() -> Flask:
             ),
         )
 
-        return jsonify({"enrollment": state, "command_sent": True})
+        return jsonify({"enrollment": state, "command_sent": True, "command_id": command_id})
 
     @app.post("/api/access/check")
     def access_check():
@@ -892,7 +893,7 @@ def create_app() -> Flask:
     def reset():
         payload = request.get_json(silent=True) or {}
         device_id = payload.get("device_id", "esp32")
-        sent = publish_reset_command(device_id=device_id)
+        sent, command_id = publish_reset_command(device_id=device_id)
         if not sent:
             return jsonify({
                 "error": "failed to send reset command to device",
@@ -903,6 +904,7 @@ def create_app() -> Flask:
         return jsonify({
             "reset": result,
             "command_sent": True,
+            "command_id": command_id,
             "device_id": device_id,
             "instance": _instance_info(),
         })
@@ -913,7 +915,7 @@ def create_app() -> Flask:
         device_id = payload.get("device_id", "esp32")
         duration_ms = int(payload.get("duration_ms", 5000))
 
-        sent = publish_unlock_command(device_id=device_id, duration_ms=duration_ms)
+        sent, command_id = publish_unlock_command(device_id=device_id, duration_ms=duration_ms)
         if not sent:
             return jsonify({
                 "error": "failed to send unlock command to device",
@@ -923,6 +925,7 @@ def create_app() -> Flask:
         return jsonify({
             "unlock": "requested",
             "command_sent": True,
+            "command_id": command_id,
             "device_id": device_id,
             "duration_ms": duration_ms,
             "instance": _instance_info(),

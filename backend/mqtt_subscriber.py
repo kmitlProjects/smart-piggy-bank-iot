@@ -34,6 +34,8 @@ class MQTTIngestService:
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
             heartbeat_reason = payload.get("heartbeat_reason")
+            command_id = payload.get("command_id")
+            duplicate_command_response = False
 
             if payload.get("rfid_scan_uid") is not None:
                 record_rfid_scan(payload["rfid_scan_uid"], source=payload.get("rfid_scan_source", "esp32_enroll"))
@@ -41,27 +43,32 @@ class MQTTIngestService:
             upsert_device_runtime(payload, device_id="esp32")
 
             if heartbeat_reason == "WEB_UNLOCK":
-                log_activity_event(
+                inserted = log_activity_event(
                     event_type="access",
                     action="WEB_UNLOCK",
                     status="APPLIED",
                     source="device",
+                    command_id=command_id,
                     reason="WEB_UNLOCK",
                     details="Unlock command applied on the ESP32 device.",
                 )
+                duplicate_command_response = bool(command_id) and not inserted
             elif heartbeat_reason == "RESET":
-                log_activity_event(
+                inserted = log_activity_event(
                     event_type="system",
                     action="RESET_DATA",
                     status="APPLIED",
                     source="device",
+                    command_id=command_id,
                     reason="RESET",
                     details="Coin counter reset was applied on the ESP32 device.",
                 )
+                duplicate_command_response = bool(command_id) and not inserted
 
             if any(key in payload for key in ("coins", "total", "distance_cm", "is_locked", "fill_percent")):
-                insert_coin_event(payload, source="mqtt", device_id="esp32")
-                upsert_latest_status(payload, device_id="esp32")
+                if not duplicate_command_response:
+                    insert_coin_event(payload, source="mqtt", device_id="esp32")
+                    upsert_latest_status(payload, device_id="esp32")
                 mark_device_seen(device_id="esp32", reason=heartbeat_reason or "HEARTBEAT")
             print("MQTT message stored")
         except Exception as exc:

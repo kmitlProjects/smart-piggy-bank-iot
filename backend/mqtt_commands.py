@@ -1,15 +1,20 @@
 import json
 import time
+from uuid import uuid4
 
 from paho.mqtt import publish
 
 from config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_COMMAND
 
 
-def _publish_command(payload: dict, retries: int = 3, delay_s: float = 0.2) -> bool:
-    try:
-        body = json.dumps(payload)
-        for i in range(retries):
+def _publish_command(payload: dict, retries: int = 3, delay_s: float = 0.2) -> tuple[bool, str]:
+    command_id = str(payload.get("command_id") or uuid4().hex)
+    body = json.dumps({
+        **payload,
+        "command_id": command_id,
+    })
+    for i in range(retries):
+        try:
             publish.single(
                 MQTT_TOPIC_COMMAND,
                 payload=body,
@@ -18,22 +23,24 @@ def _publish_command(payload: dict, retries: int = 3, delay_s: float = 0.2) -> b
                 qos=1,
                 retain=False,
             )
-            if i < retries - 1:
+            return True, command_id
+        except Exception as exc:
+            if i >= retries - 1:
+                print(f"[MQTT COMMAND] publish failed: {exc}")
+                return False, command_id
+            if delay_s > 0:
                 time.sleep(delay_s)
-        return True
-    except Exception as exc:
-        print(f"[MQTT COMMAND] publish failed: {exc}")
-        return False
+    return False, command_id
 
 
-def publish_reset_command(device_id: str = "esp32") -> bool:
+def publish_reset_command(device_id: str = "esp32") -> tuple[bool, str]:
     return _publish_command({
         "action": "reset_data",
         "device_id": device_id,
     })
 
 
-def publish_unlock_command(device_id: str = "esp32", duration_ms: int = 5000) -> bool:
+def publish_unlock_command(device_id: str = "esp32", duration_ms: int = 5000) -> tuple[bool, str]:
     if duration_ms < 1000:
         duration_ms = 1000
     if duration_ms > 15000:
@@ -46,7 +53,7 @@ def publish_unlock_command(device_id: str = "esp32", duration_ms: int = 5000) ->
     })
 
 
-def publish_rfid_enroll_command(device_id: str = "esp32", enabled: bool = False) -> bool:
+def publish_rfid_enroll_command(device_id: str = "esp32", enabled: bool = False) -> tuple[bool, str]:
     return _publish_command({
         "action": "rfid_enroll_mode",
         "device_id": device_id,
@@ -54,7 +61,7 @@ def publish_rfid_enroll_command(device_id: str = "esp32", enabled: bool = False)
     })
 
 
-def publish_dashboard_interval_command(device_id: str = "esp32", interval_sec: int = 5) -> bool:
+def publish_dashboard_interval_command(device_id: str = "esp32", interval_sec: int = 5) -> tuple[bool, str]:
     try:
         safe_interval_sec = int(interval_sec)
     except Exception:

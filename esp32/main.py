@@ -68,6 +68,7 @@ WIFI_RECONNECT_INTERVAL_MS = 5000
 WIFI_RECONNECT_TIMEOUT_S = 8
 MQTT_RECOVERY_CHECK_MS = 1500
 COIN_NOISE_GUARD_MS = 300
+COMMAND_HISTORY_LIMIT = 24
 BIN_EMPTY_DISTANCE_CM = 17.5
 BIN_FULL_DISTANCE_CM = 4.9
 BIN_MAX_COINS_EST = 400
@@ -183,9 +184,24 @@ def run():
     dashboard_update_ms = DEFAULT_DASHBOARD_UPDATE_MS
     wifi_was_connected = False
     server_started = False
+    recent_command_ids = []
+
+    def has_seen_command(command_id):
+        if not command_id:
+            return False
+        return command_id in recent_command_ids
+
+    def remember_command(command_id):
+        if not command_id:
+            return
+        if command_id in recent_command_ids:
+            return
+        recent_command_ids.append(command_id)
+        if len(recent_command_ids) > COMMAND_HISTORY_LIMIT:
+            recent_command_ids.pop(0)
 
     # ===== WEB STATUS FUNCTION =====
-    def current_payload(heartbeat_reason="HEARTBEAT", rfid_scan_uid=None, rfid_scan_source=None):
+    def current_payload(heartbeat_reason="HEARTBEAT", rfid_scan_uid=None, rfid_scan_source=None, command_id=None):
         payload = {
             "coins": coins.snapshot(),
             "total": coins.total(),
@@ -205,6 +221,8 @@ def run():
             payload["rfid_scan_uid"] = str(rfid_scan_uid)
         if rfid_scan_source is not None:
             payload["rfid_scan_source"] = rfid_scan_source
+        if command_id:
+            payload["command_id"] = command_id
         return payload
 
     def get_status():
@@ -251,8 +269,14 @@ def run():
         nonlocal enroll_mode, enroll_started_ms, is_locked, unlock_started_ms, dashboard_update_ms
         try:
             action = None
+            command_id = None
             if isinstance(payload, dict):
                 action = payload.get("action") or payload.get("cmd")
+                command_id = payload.get("command_id")
+
+            if has_seen_command(command_id):
+                print("[MQTT CMD] duplicate ignored:", action, command_id)
+                return
 
             if action == "reset_data":
                 coins.reset()
@@ -261,7 +285,8 @@ def run():
                 is_locked = True
                 unlock_started_ms = None
 
-                mqtt.publish(current_payload(heartbeat_reason="RESET"))
+                remember_command(command_id)
+                mqtt.publish(current_payload(heartbeat_reason="RESET", command_id=command_id))
                 print("[RESET] Data reset command applied on board")
 
             elif action == "unlock_once":
@@ -284,7 +309,8 @@ def run():
                 pulse_output(led)
                 pulse_output(buzzer)
 
-                mqtt.publish(current_payload(heartbeat_reason="WEB_UNLOCK"))
+                remember_command(command_id)
+                mqtt.publish(current_payload(heartbeat_reason="WEB_UNLOCK", command_id=command_id))
                 print("[UNLOCK] Unlock command applied from web")
 
             elif action == "rfid_enroll_mode":
@@ -298,7 +324,11 @@ def run():
                 is_locked = True
                 unlock_started_ms = None
                 coins.suppress_for(COIN_NOISE_GUARD_MS)
-                mqtt.publish(current_payload(heartbeat_reason="ENROLL_MODE_ON" if enabled else "ENROLL_MODE_OFF"))
+                remember_command(command_id)
+                mqtt.publish(current_payload(
+                    heartbeat_reason="ENROLL_MODE_ON" if enabled else "ENROLL_MODE_OFF",
+                    command_id=command_id,
+                ))
                 print("[RFID ENROLL MODE]", "enabled" if enabled else "disabled")
 
             elif action == "set_dashboard_interval":
@@ -310,7 +340,8 @@ def run():
                         requested_ms = DEFAULT_DASHBOARD_UPDATE_MS
 
                 dashboard_update_ms = max(1000, min(10000, requested_ms))
-                mqtt.publish(current_payload(heartbeat_reason="INTERVAL_UPDATED"))
+                remember_command(command_id)
+                mqtt.publish(current_payload(heartbeat_reason="INTERVAL_UPDATED", command_id=command_id))
                 print("[DASHBOARD INTERVAL]", dashboard_update_ms, "ms")
         except Exception as exc:
             print(f"[MQTT CMD ERROR] {exc}")
