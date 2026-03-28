@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from config import DB_PATH, DATA_DIR
+from config import CONNECTIVITY_EVENTS_LIMIT, DB_PATH, DATA_DIR
 
 
 SCHEMA_SQL = """
@@ -136,6 +136,7 @@ def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.executescript(SCHEMA_SQL)
+        _prune_all_connectivity_events(conn, keep_latest=CONNECTIVITY_EVENTS_LIMIT)
         conn.commit()
     finally:
         conn.close()
@@ -183,6 +184,44 @@ def _insert_connectivity_event(
         """,
         (device_id, event, reason, last_seen_at, timeout_seconds, _now_iso()),
     )
+    _prune_connectivity_events(conn, device_id=device_id, keep_latest=CONNECTIVITY_EVENTS_LIMIT)
+
+
+def _prune_connectivity_events(
+    conn: sqlite3.Connection,
+    device_id: str,
+    keep_latest: int,
+) -> None:
+    if keep_latest <= 0:
+        return
+
+    conn.execute(
+        """
+        DELETE FROM connectivity_events
+        WHERE device_id = ?
+          AND id NOT IN (
+              SELECT id
+              FROM connectivity_events
+              WHERE device_id = ?
+              ORDER BY id DESC
+              LIMIT ?
+          )
+        """,
+        (device_id, device_id, keep_latest),
+    )
+
+
+def _prune_all_connectivity_events(conn: sqlite3.Connection, keep_latest: int) -> None:
+    if keep_latest <= 0:
+        return
+
+    rows = conn.execute(
+        "SELECT DISTINCT device_id FROM connectivity_events WHERE device_id IS NOT NULL AND TRIM(device_id) != ''"
+    ).fetchall()
+    for row in rows:
+        device_id = row[0]
+        if device_id:
+            _prune_connectivity_events(conn, device_id=device_id, keep_latest=keep_latest)
 
 
 def mark_device_seen(device_id: str, reason: str = "HEARTBEAT") -> None:
@@ -882,12 +921,14 @@ def reset_database(clear_cards: bool = False) -> Dict[str, int]:
         deleted_access_logs = conn.execute("DELETE FROM access_logs").rowcount
         deleted_activity_events = conn.execute("DELETE FROM activity_events").rowcount
         deleted_status = conn.execute("DELETE FROM latest_status").rowcount
-        deleted_device_runtime = conn.execute("DELETE FROM device_runtime").rowcount
-        deleted_device_settings = conn.execute("DELETE FROM device_settings").rowcount
         deleted_enrollment_state = conn.execute("DELETE FROM rfid_enrollment_state").rowcount
         deleted_scan_events = conn.execute("DELETE FROM rfid_scan_events").rowcount
-        deleted_connectivity_state = conn.execute("DELETE FROM connectivity_state").rowcount
-        deleted_connectivity_events = conn.execute("DELETE FROM connectivity_events").rowcount
+        # Keep runtime, settings, and connectivity tables so Reset Data only clears
+        # user/dashboard history and does not make a currently connected device look offline.
+        deleted_device_runtime = 0
+        deleted_device_settings = 0
+        deleted_connectivity_state = 0
+        deleted_connectivity_events = 0
         deleted_cards = 0
         if clear_cards:
             deleted_cards = conn.execute("DELETE FROM rfid_cards").rowcount

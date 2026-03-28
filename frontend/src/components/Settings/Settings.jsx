@@ -9,6 +9,8 @@ import {
 import { readCachedDeviceStatus, writeCachedDeviceStatus } from '../../utils/deviceStatusCache';
 
 const REFRESH_APPLY_DELAY_MS = 320;
+const RESET_HEARTBEAT_WAIT_MS = 1000;
+const RESET_HEARTBEAT_MAX_ATTEMPTS = 8;
 
 function formatTimestamp(value) {
   if (!value) {
@@ -56,6 +58,12 @@ async function fetchJson(path, options = {}) {
   }
 
   return response.json();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 const Settings = ({ onNavigate }) => {
@@ -129,7 +137,7 @@ const Settings = ({ onNavigate }) => {
         setCachedDevice(nextCachedDevice);
       }
 
-      setDevice({
+      const nextDevice = {
         wifiSsid: deviceRes.wifi_ssid || 'Unknown',
         backendContainerIp: deviceRes.backend_container_ip || deviceRes.local_ip || '127.0.0.1',
         esp32Ip: deviceRes.esp32_ip || 'Unknown',
@@ -140,20 +148,48 @@ const Settings = ({ onNavigate }) => {
         dashboardHost,
         dashboardUrl,
         apiUrl: deviceRes.api_url || '',
-      });
+      };
+      setDevice(nextDevice);
       setRefreshInterval(syncedRefreshInterval);
-      setRfidCards(Array.isArray(cardsRes.cards) ? cardsRes.cards : []);
-      setEnrollment(enrollmentRes.enrollment || {
+      const nextCards = Array.isArray(cardsRes.cards) ? cardsRes.cards : [];
+      const nextEnrollment = enrollmentRes.enrollment || {
         active: false,
         pending_uid: null,
         last_scanned_at: null,
-      });
+      };
+      setRfidCards(nextCards);
+      setEnrollment(nextEnrollment);
 
       const status = statusRes.status || {};
       setIsUnlocked(status.is_locked === false || status.is_locked === 0);
+      return {
+        device: nextDevice,
+        cards: nextCards,
+        enrollment: nextEnrollment,
+        status,
+      };
     } catch (fetchError) {
       setError(fetchError.message || 'Failed to load settings');
+      return null;
     }
+  };
+
+  const waitForResetHeartbeat = async (previousLastSeenAt) => {
+    for (let attempt = 0; attempt < RESET_HEARTBEAT_MAX_ATTEMPTS; attempt += 1) {
+      const snapshot = await refreshSettings({ silent: true });
+      const nextLastSeenAt = snapshot?.device?.lastSeenAt || null;
+      if (
+        snapshot?.device?.connectionStatus === 'CONNECTED'
+        && nextLastSeenAt
+        && nextLastSeenAt !== previousLastSeenAt
+      ) {
+        return true;
+      }
+
+      await sleep(RESET_HEARTBEAT_WAIT_MS);
+    }
+
+    return false;
   };
 
   useEffect(() => {
@@ -278,13 +314,19 @@ const Settings = ({ onNavigate }) => {
     setNotice('');
 
     try {
+      const previousLastSeenAt = device.lastSeenAt || cachedDevice?.last_seen_at || null;
       await fetchJson('/api/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clear_cards: false }),
       });
-      setNotice('Reset command sent. Dashboard data will refresh shortly.');
-      await refreshSettings({ silent: true });
+      setNotice('Reset command sent. Waiting for a fresh device heartbeat...');
+      const heartbeatRestored = await waitForResetHeartbeat(previousLastSeenAt);
+      setNotice(
+        heartbeatRestored
+          ? 'Reset completed. Device heartbeat is back online.'
+          : 'Reset command sent. Dashboard data will refresh when the next device heartbeat arrives.',
+      );
     } catch (resetError) {
       setError(resetError.message || 'Reset failed');
     } finally {
@@ -414,6 +456,11 @@ const Settings = ({ onNavigate }) => {
   };
 
   const isConnected = device.connectionStatus === 'CONNECTED';
+  const connectionBadge = isConnected
+    ? { className: 'is-connected', label: 'Connected' }
+    : device.connectionStatus === 'DISCONNECTED'
+      ? { className: 'is-disconnected', label: 'Disconnected' }
+      : { className: 'is-muted', label: 'Syncing' };
   const topbarWifi = device.connectionStatus === 'CONNECTED'
     ? true
     : device.connectionStatus === 'DISCONNECTED'
@@ -465,8 +512,8 @@ const Settings = ({ onNavigate }) => {
               </div>
 
               <div className="settings-status-strip">
-                <span className={`settings-pill ${isConnected ? 'is-connected' : 'is-disconnected'}`}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
+                <span className={`settings-pill ${connectionBadge.className}`}>
+                  {connectionBadge.label}
                 </span>
                 <span className="settings-status-copy">Last heartbeat: {device.lastSeen}</span>
               </div>
