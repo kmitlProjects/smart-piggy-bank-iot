@@ -2,11 +2,20 @@ import network
 import time
 
 
-def connect_wifi(ssid, password, timeout_s=15):
-    wlan = network.WLAN(network.STA_IF)
+def connect_wifi(ssid, password, timeout_s=15, wlan=None):
+    wlan = wlan or network.WLAN(network.STA_IF)
     wlan.active(True)
 
+    if wlan.isconnected():
+        return wlan
+
     print("Connecting to:", ssid)
+
+    try:
+        wlan.disconnect()
+        time.sleep_ms(200)
+    except Exception:
+        pass
 
     wlan.connect(ssid, password)
     start = time.ticks_ms()
@@ -20,6 +29,12 @@ def connect_wifi(ssid, password, timeout_s=15):
 
     print("Result:", wlan.ifconfig())
     return wlan
+
+
+def reconnect_wifi(wlan, ssid, password, timeout_s=10):
+    if not ssid or not password:
+        return wlan
+    return connect_wifi(ssid, password, timeout_s=timeout_s, wlan=wlan)
 
 
 def is_connected(wlan):
