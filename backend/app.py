@@ -30,6 +30,7 @@ from db import (
     get_latest_status,
     get_rfid_enrollment_state,
     init_db,
+    log_activity_event,
     list_rfid_cards,
     process_connectivity_timeout,
     reset_database,
@@ -290,6 +291,11 @@ def _action_meta(action_code: str) -> tuple[str, str]:
         "rfid_unlock": ("RFID Unlock", "unlock"),
         "web_unlock": ("Web Unlock", "unlock"),
         "reset_data": ("Reset Data", "system"),
+        "rfid_card_added": ("RFID Card Added", "security"),
+        "rfid_card_updated": ("RFID Card Updated", "security"),
+        "rfid_card_removed": ("RFID Card Removed", "security"),
+        "rfid_enroll_mode_on": ("Enroll Mode On", "security"),
+        "rfid_enroll_mode_off": ("Enroll Mode Off", "security"),
     }
     return mapping.get(action_key, (action_code.replace("_", " ").title() if action_code else "Activity", "system"))
 
@@ -305,8 +311,31 @@ def _reason_label(reason_code: str | None) -> str | None:
         "WIFI_DISCONNECTED": "Device offline",
         "WEB_UNLOCK": "Unlock applied on device",
         "RESET": "Reset applied on device",
+        "CARD_ADDED": "Authorized card added",
+        "CARD_UPDATED": "Authorized card updated",
+        "CARD_REMOVED": "Authorized card removed",
+        "ENROLL_MODE_ON": "Scan mode enabled",
+        "ENROLL_MODE_OFF": "Scan mode disabled",
     }
     return mapping.get(reason_key, reason_key.replace("_", " ").title())
+
+
+def _find_card_by_id(card_id: int) -> dict | None:
+    for card in list_rfid_cards(active_only=False):
+        if int(card.get("id", 0)) == int(card_id):
+            return card
+    return None
+
+
+def _card_label(card: dict | None) -> str:
+    if not card:
+        return "Unknown card"
+
+    owner_name = (card.get("owner_name") or "").strip() if isinstance(card.get("owner_name"), str) else card.get("owner_name")
+    uid = card.get("uid") or "unknown uid"
+    if owner_name:
+        return f"{owner_name} ({uid})"
+    return str(uid)
 
 
 def _build_transaction_rows(derived_events: list[dict]) -> list[dict]:
@@ -398,6 +427,8 @@ def _build_activity_transaction_rows(activity_rows: list[dict]) -> list[dict]:
 
         if action_code == "unlock":
             coin_label = "Web Dashboard"
+        elif action_code == "security":
+            coin_label = "RFID Access List"
         else:
             coin_label = "System Event"
 
@@ -743,6 +774,15 @@ def create_app() -> Flask:
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
+        log_activity_event(
+            event_type="security",
+            action="RFID_CARD_ADDED",
+            status="APPLIED",
+            source="web",
+            uid=card.get("uid"),
+            reason="CARD_ADDED",
+            details=f"Authorized RFID card added: {_card_label(card)}",
+        )
         clear_pending_rfid_scan()
         publish_rfid_enroll_command(device_id="esp32", enabled=False)
         set_rfid_enrollment_state(active=False, pending_uid=None)
@@ -758,6 +798,8 @@ def create_app() -> Flask:
         if not uid:
             return jsonify({"error": "uid is required"}), 400
 
+        existing_card = _find_card_by_id(card_id)
+
         try:
             card = update_rfid_card(card_id, uid=uid, owner_name=owner_name, is_active=is_active)
         except ValueError as exc:
@@ -770,13 +812,35 @@ def create_app() -> Flask:
         if card is None:
             return jsonify({"error": "card not found"}), 404
 
+        previous_label = _card_label(existing_card)
+        next_label = _card_label(card)
+        log_activity_event(
+            event_type="security",
+            action="RFID_CARD_UPDATED",
+            status="APPLIED",
+            source="web",
+            uid=card.get("uid"),
+            reason="CARD_UPDATED",
+            details=f"Authorized RFID card updated: {previous_label} -> {next_label}",
+        )
         return jsonify({"card": card})
 
     @app.delete("/api/rfid/cards/<int:card_id>")
     def delete_rfid_card_route(card_id: int):
+        existing_card = _find_card_by_id(card_id)
         deleted = deactivate_rfid_card_by_id(card_id)
         if not deleted:
             return jsonify({"error": "card not found"}), 404
+
+        log_activity_event(
+            event_type="security",
+            action="RFID_CARD_REMOVED",
+            status="APPLIED",
+            source="web",
+            uid=(existing_card or {}).get("uid"),
+            reason="CARD_REMOVED",
+            details=f"Authorized RFID card removed: {_card_label(existing_card)}",
+        )
         return jsonify({"deleted": True, "card_id": card_id})
 
     @app.get("/api/rfid/enroll-mode")
@@ -796,6 +860,19 @@ def create_app() -> Flask:
         else:
             clear_pending_rfid_scan()
             state = set_rfid_enrollment_state(active=False, pending_uid=None)
+
+        log_activity_event(
+            event_type="security",
+            action="RFID_ENROLL_MODE_ON" if active else "RFID_ENROLL_MODE_OFF",
+            status="APPLIED",
+            source="web",
+            reason="ENROLL_MODE_ON" if active else "ENROLL_MODE_OFF",
+            details=(
+                "RFID scan mode enabled from Settings."
+                if active else
+                "RFID scan mode disabled from Settings."
+            ),
+        )
 
         return jsonify({"enrollment": state, "command_sent": True})
 
