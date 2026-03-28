@@ -1,223 +1,92 @@
-# 🚀 QUICK START - Smart Piggy Bank
+# Quick Start
 
-## ด่วน! เริ่มต้นใช้งานเลย 5 นาที
+เอกสารนี้เป็นทางลัดสำหรับเปิดระบบเวอร์ชันปัจจุบันให้ใช้งานได้เร็วที่สุด
 
-### **📱 Step 1: ติดตั้ง Node.js (ถ้ายังไม่ได้ลง)**
+## Prerequisites
 
-ลง Node.js จาก: https://nodejs.org/ (เลือก LTS version)
+- Docker Desktop
+- Python 3
+- Node.js / npm
+- MQTT broker บนเครื่อง host ที่ port `1883`
+- ESP32 ที่เชื่อม Wi-Fi วงเดียวกับเครื่องพัฒนา
 
-หลังจากลงเสร็จ ตรวจสอบ:
-```bash
-node --version
-npm --version
-```
+## Step 1: Sync host config
 
----
-
-### **🌐 Step 2: เปิด Terminal และไป frontend folder**
+อัปเดต host name / IP ที่ใช้ร่วมกันระหว่าง ESP32 และ backend
 
 ```bash
-# ไป folder เหล่านี้
-cd /Users/chanwitkamjadpai/Documents/ChanwitDoc/2568_comsci/3_2_2568/Practical\ Project/code/version-3_myproject_VSCode-MicroPico/frontend
-
-# หรือถ้าเปิดจาก VS Code ก็คลิกขวา > Open Integrated Terminal > cd frontend
+cd /Users/chanwitkamjadpai/Documents/ChanwitDoc/2568_comsci/3_2_2568/Practical\ Project/code/version-3_myproject_VSCode-MicroPico
+python3 tools/set_host.py --auto
 ```
 
----
-
-### **📦 Step 3: ติดตั้ง Package Dependencies**
+## Step 2: Start frontend + backend
 
 ```bash
-npm install
+docker compose up --build
 ```
 
-**รอสักครู่** ให้มันดาวน์โหลด packages ทั้งหมด... (ครั้งแรกจะช้า 1-2 นาที)
+เปิดใช้งานที่:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:5001`
 
----
-
-### **▶️ Step 4: เริ่มต้นรัน Development Server**
+## Step 3: Upload ESP32 code
 
 ```bash
-npm run dev
+./tools/sync_up.sh auto <webrepl-password> [preferred-esp32-ip]
 ```
 
-**ผลลัพธ์ที่คุณเห็น:**
-```
-VITE v5.0.8  ready in 245 ms
+ตัวอย่าง:
 
-➜  Local:   http://localhost:5173/
-➜  press h + enter to show help
-```
-
-✨ Browser จะเปิดอัตโนมัติ! (ถ้าไม่เปิด ให้คลิก: http://localhost:5173/)
-
----
-
-## 📊 `http://localhost:5173/` ที่เปิดขึ้นมา เห็นอะไร?
-
-```
-Smart Piggy Bank
-Waiting for data...    (จะเปลี่ยนเป็น "Connected" เมื่อบอร์ด ONLINE)
-
-1 baht: 0
-2 baht: 0
-5 baht: 0
-10 baht: 0
-
-Total: 0
-Estimated total: - baht
-...
-```
-
----
-
-## ❓ อะไรจะเกิดขึ้นต่อไป?
-
-### **1️⃣ Download MQTT Library สำหรับ ESP32**
-```
-⚠️ หนึ่งขั้นตอนสำคัญ: ต้องติดตั้ง umqtt.simple library
-
-Download: https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/umqtt/simple.py
-Upload ไป: esp32/lib/simple.py
-
-(หรือติดต่อ Copilot ให้ช่วยดาวน์โหลด)
-```
-
-### **2️⃣ Config ESP32 (บอร์ด)**
-```
-ไฟล์: esp32/main.py
-
-เปลี่ยนเหล่านี้:
-WIFI_SSID = "ชื่อ WiFi ของคุณ"
-WIFI_PASSWORD = "รหัส WiFi ของคุณ"
-
-MQTT Config ถูกแล้ว ✓ (ใช้ HiveMQ Cloud ฟรี)
-```
-
-### **3️⃣ อัพโหลด Code ไปบอร์ด**
-```
-- เปิด VS Code
-- ไปที่ explorer > esp32/
-- คลิกขวา > "Upload project to MicroPython device"
-- รออัพโหลดเสร็จ
-```
-
-### **4️⃣ รัน Code บนบอร์ด**
-```
-- เปิด Serial Monitor ใน VS Code
-- คุณควรเห็น output เช่นนี้:
-  ✓ MQTT connected to broker.hivemq.com
-  MQTT: published
-  MQTT: published
-  ...
-```
-
-### **5️⃣ ทดสอบเชื่อมต่อ**
-```
-ใน Browser ที่เปิด http://localhost:5173/ 
-(รอ 5-10 วินาที)
-คุณควรเห็น:
-- Status: Connected ✅
-- ข้อมูลเหรียญเริ่มอัปเดตแบบเรียลไทม์
-```
-
----
-
-## 🛠️ คำสั่งที่มี
-
-| คำสั่ง | ทำอะไร |
-|-------|--------|
-| `npm run dev` | เริ่มต้น Development (Hot reload) |
-| `npm run build` | สร้าง Production files |
-| `npm run preview` | ดู Preview ของ build |
-
----
-
-## 🆘 ถ้ามีปัญหา
-
-### ❌ "localhost:5173 ไม่เปิด"
 ```bash
-# ลองหยุดแล้วเริ่มใหม่
-# กด Ctrl+C แล้วรัน npm run dev อีกครั้ง
+./tools/sync_up.sh auto neae4850 10.164.223.245
 ```
 
-### ❌ "Cannot find module 'react'"
-```bash
-# ลบ node_modules แล้วลง packages ใหม่
-rm -rf node_modules
-npm install
-npm run dev
-```
+จากนั้นกด `EN/RESET` ที่บอร์ด 1 ครั้ง
 
-### ❌ "Port 5173 already in use"
-```bash
-# ใช้ port ตัวอื่น
-npx vite --port 3000
-```
+## Step 4: Verify the system
 
-### ❌ Dashboard ว่างเปล่า (ยังไม่เห็นข้อมูล)
-- ✅ ตรวจสอบว่า API endpoint ถูกต้อง (App.jsx บรรทัด 8)
-- ✅ ตรวจสอบว่า ESP32 ออนไลน์ (ดู Serial Monitor)
-- ✅ ตรวจสอบ WiFi connected (ดู ESP32 terminal)
+เช็ก flow หลักตามนี้
 
----
+1. เปิดหน้า Dashboard
+2. ดูว่า top bar แสดง `Connected`
+3. ไปหน้า Settings
+4. เปิด RFID scan mode และทดลองเพิ่มบัตร
+5. ทดสอบปลดล็อกผ่านบัตรหรือ `Unlock via Web`
+6. ไปหน้า Transactions เพื่อตรวจสอบ log
 
-## ✅ ถ้าทุกอย่างทำงาน
+## Current URLs
 
-🎉 **Congratulations!** คุณได้:
-- ✅ React Dashboard รันอยู่
-- ✅ ESP32 ส่งข้อมูลมา
-- ✅ อัพเดตแบบเรียลไทม์
+- `http://localhost:5173/dashboard`
+- `http://localhost:5173/statistics`
+- `http://localhost:5173/transactions`
+- `http://localhost:5173/settings`
 
----
+## Current System Behavior
 
-## 📝 ขั้นตอนการเพิ่มเติม
+- RFID unlock ต้องใช้ backend online
+- การหยอดเหรียญยังทำงานได้แม้ backend offline
+- เมื่อระบบกลับมา online ยอดเหรียญสะสมจะถูก sync กลับมายัง backend
 
-### **เพิ่ม Features ใหม่ (เช่น เปิด/ปิดล็อค)**
+## If Something Fails
 
-1. **Edit React** (`frontend/src/App.jsx`):
-```jsx
-const [locked, setLocked] = useState(true);
+### Frontend opens but no live data
+- เช็กว่า backend container ยัง `Up`
+- เช็กว่า MQTT broker เปิดอยู่
+- เช็กว่า ESP32 ต่อ Wi-Fi ได้
 
-<button onClick={() => {
-  fetch(API_URL + '/unlock', {method: 'POST'});
-  setLocked(false);
-}}>Unlock Piggy Bank</button>
-```
+### RFID unlock does not work
+- เช็กว่า backend online
+- เช็กว่าบัตรถูก enroll แล้ว
+- เช็กหน้า Transactions ว่ามี access/security log หรือไม่
 
-2. **Edit ESP32** (`esp32/webserver.py`):
-```python
-@app.route('/unlock', methods=['POST'])
-def unlock():
-    lock_pin.on()  # Unlock
-    return {'status': 'unlocked'}
-```
+### WebREPL upload fails
+- เช็ก password
+- เช็ก IP ของบอร์ด
+- เช็กว่า ESP32 อยู่ใน network เดียวกัน
 
-### **เปลี่ยนสีและ Design**
-- Edit `frontend/src/App.css` สำหรับ styling
-- Edit `frontend/src/index.css` สำหรับ global styles
+## AI note
 
----
+โปรเจกต์นี้พัฒนาด้วยแนวทาง `AI-assisted development`
+- visual references ของ frontend บางส่วนมาจาก Stitch AI
+- การช่วย debug / refactor / implementation บางส่วนใช้ AI assistant
 
-## 🎯 สรุป
-
-**คุณได้ทำเสร็จแล้ว!**
-
-```
-┌─────────────────────────────────────┐
-│  ESP32 (MicroPython)               │
-│  - นับเหรียญ                       │
-│  - ส่งข้อมูล API                    │
-└──────────────┬──────────────────────┘
-               │ (API)
-               ▼
-┌─────────────────────────────────────┐
-│  React Dashboard                    │
-│  - localhost:5173                   │
-│  - แสดงข้อมูล เรียลไทม์             │
-└─────────────────────────────────────┘
-```
-
----
-
-**Happy coding!** 🚀

@@ -1,200 +1,127 @@
-# 🔗 MQTT Setup Guide - HiveMQ Cloud
+# MQTT Setup
 
-## 📝 สรุป
+เอกสารนี้อธิบายการตั้งค่า MQTT สำหรับระบบเวอร์ชันปัจจุบัน
 
-เปลี่ยนจาก **HTTP API** เป็น **MQTT** แล้ว
+## Current MQTT Role in This Project
 
-**ข้อดี:**
-- ✅ ส่งข้อมูลได้เร็ว (real-time)
-- ✅ ประหยัด bandwidth
-- ✅ ไม่ต้องเปิด/ปิด connection บ่อยๆ
-- ✅ ใช้ HiveMQ Cloud ฟรี
+MQTT ใช้เป็นช่องทางสื่อสารระหว่าง `ESP32` และ `backend`
 
----
+- `ESP32 -> MQTT -> backend`
+  - ส่ง coin snapshots
+  - ส่ง device heartbeat / status
+  - ส่ง enroll scan UID
+  - ส่งผลลัพธ์ของคำสั่ง เช่น web unlock / reset
 
-## 🛠️ ไฟล์ที่เปลี่ยน
+- `backend -> MQTT -> ESP32`
+  - สั่ง unlock
+  - สั่ง reset
+  - สั่งเปิด/ปิด enroll mode
+  - สั่งเปลี่ยน dashboard refresh interval
 
-### **ESP32 (MicroPython)**
-- ✅ `esp32/main.py` - ลบ HTTP, เพิ่ม MQTT publish
-- ✅ `esp32/mqtt_handler.py` - ไฟล์ helper สำหรับ MQTT client
+Frontend เวอร์ชันปัจจุบัน **ไม่ได้ subscribe MQTT โดยตรง**
+Frontend เรียกข้อมูลผ่าน `/api/*` จาก backend
 
-### **React Frontend**
-- ✅ `frontend/src/App.jsx` - ลบ HTTP fetch, เพิ่ม MQTT subscribe
-- ✅ `frontend/package.json` - เพิ่ม mqtt.js library
+## Topics
 
----
-
-## 📡 MQTT Broker Settings
-
-```
-Broker: broker.hivemq.com
-Protocol: MQTT over WebSocket
-URL: wss://broker.hivemq.com:8884/mqtt
-
-Topics:
-├── piggybank/data (ESP32 → React)
-│   └── ข้อมูลเหรียญ, สถานะ, ระยะทาง
-└── piggybank/command (React → ESP32, อนาคต)
-    └── สั่งการ (เปิด/ปิด ล็อค)
+```text
+piggybank/data
+piggybank/command
 ```
 
----
+ค่า default ตอนนี้:
+- `MQTT_TOPIC_PUBLISH = piggybank/data`
+- `MQTT_TOPIC_SUBSCRIBE = piggybank/command`
 
-## 🚀 ขั้นตอนการใช้
+## Current Host Strategy
 
-### **ขั้นตอนที่ 1: ติดตั้ง Dependencies**
+โปรเจกต์นี้ใช้แนวทาง `local-first`
 
-**ESP32:**
-ต้องติดตั้ง `umqtt.simple` library บน MicroPython
+### ESP32 side
+ดูค่าที่:
+- [esp32/config.py](esp32/config.py)
+
+ฟิลด์สำคัญ:
+- `MQTT_BROKER`
+- `BACKEND_HOST`
+
+### Backend side
+ดูค่าที่:
+- `backend/.env`
+- [backend/config.py](backend/config.py)
+
+เมื่อรันผ่าน Docker:
+- backend container จะคุยกับ MQTT broker ที่ `host.docker.internal:1883`
+- frontend คุยกับ backend ผ่าน Vite proxy / Docker network
+
+## Recommended Setup
+
+1. เปิด MQTT broker บนเครื่อง host ที่ port `1883`
+2. รันคำสั่งนี้เพื่อ sync host name ให้ตรงกัน
 
 ```bash
-# Upload library ผ่าน MicroPython IDE
-# หรือ download จาก: https://github.com/micropython/micropython-lib
-# Copy: umqtt/simple.py ไปยัง ESP32 lib/ folder
+python3 tools/set_host.py --auto
 ```
 
-**React:**
-```bash
-cd frontend
-npm install
-```
+คำสั่งนี้จะอัปเดต
+- `esp32/config.py`
+- `backend/.env`
 
----
-
-### **ขั้นตอนที่ 2: ตั้งค่า ESP32**
-
-แก้ไฟล์ `esp32/main.py`:
-
-```python
-# WiFi Config
-WIFI_SSID = "ชื่อ WiFi ของคุณ"
-WIFI_PASSWORD = "รหัส WiFi"
-
-# MQTT Config (default HiveMQ ไม่ต้องเปลี่ยน)
-MQTT_BROKER = "broker.hivemq.com"  # ✓ ถูกแล้ว
-MQTT_TOPIC_PUBLISH = "piggybank/data"
-MQTT_TOPIC_SUBSCRIBE = "piggybank/command"
-```
-
----
-
-### **ขั้นตอนที่ 3: อัพโหลด Code ไป ESP32**
-
-1. **เปิด VS Code**
-2. **ไปที่ `esp32/` folder**
-3. **คลิกขวา → Upload project to MicroPython device**
-4. **รออัพโหลดเสร็จ**
-
----
-
-### **ขั้นตอนที่ 4: รัน React Dashboard**
+3. เปิดระบบ
 
 ```bash
-cd frontend
-npm run dev
+docker compose up --build
 ```
 
-Browser จะเปิด `http://localhost:5173/`
+4. อัปโหลดไฟล์ขึ้น ESP32
 
-**ที่ Status ประมาณ 5-10 วินาที จะเปลี่ยนเป็น "Connected"**
-
----
-
-## 🧪 ทดสอบ
-
-### **ตรวจสอบ ESP32 Serial Monitor:**
-```
-✓ MQTT connected to broker.hivemq.com
-MQTT: published
-MQTT: published
-...
+```bash
+./tools/sync_up.sh auto <webrepl-password> [preferred-esp32-ip]
 ```
 
-### **ตรวจสอบ React Browser Console (F12):**
-```
-✓ MQTT connected
-Subscribed to piggybank/data
-Received: {coins: {...}, total: 10, ...}
-```
+## Message Direction Summary
 
----
+### Periodic device payload
+ESP32 ส่ง heartbeat / state snapshots เป็นระยะ เช่น
+- coin counts
+- total
+- distance_cm
+- fill_percent
+- is_locked
+- wifi_connected
+- heartbeat_reason
 
-## 🔧 ปัญหากับวิธีแก้
+### Enroll mode
+- backend publish command เปิด/ปิด enroll mode
+- ESP32 ส่ง `rfid_scan_uid` กลับมาเมื่ออ่านบัตรในโหมด enroll
 
-### ❌ "Cannot import umqtt"
-```
-แก้ไข: ต้องติดตั้ง umqtt library ใน ESP32
-- Download: https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/umqtt/simple.py
-- Upload ไป: esp32/lib/simple.py
-```
+### Access / system actions
+- web unlock และ reset จะถูกบันทึกต่อเป็น activity logs ฝั่ง backend
 
-### ❌ "MQTT: publish failed"
-```
-เหตุ: WiFi ไม่เชื่อมต่อ
-แก้ไข:
-- ตรวจสอบ WIFI_SSID และ WIFI_PASSWORD ถูกต้อง
-- ดู Serial Monitor ว่า WiFi connected หรือไม่
-```
+## Notes for Report
 
-### ❌ "Status: Connection error"
-```
-เหตุ: React ไม่เชื่อมต่อ MQTT Broker
-แก้ไข:
-- ตรวจสอบว่ามี internet
-- ลอง refresh browser (Ctrl+R)
-- ตรวจ Browser Console (F12) → Network → ดูว่า wss connection ได้หรือไม่
-```
+เวอร์ชันนี้เลือกให้ MQTT ทำหน้าที่เฉพาะ device-backend messaging เท่านั้น ไม่ให้ frontend subscribe ตรง เพื่อให้
+- state management ง่ายขึ้น
+- logging และ authorization รวมศูนย์ที่ backend
+- หน้าเว็บเรียกข้อมูลผ่าน REST API ที่ควบคุมได้ง่ายกว่า
 
-### ❌ "Status: Offline - reconnecting"
-```
-เหตุ: Network ติดขัด
-แก้ไข:
-- รอนิด แล้ว MQTT จะ reconnect อัตโนมัติ
-- ถ้านาน ให้ restart browser
-```
+## Common Problems
 
----
+### Backend is up but ESP32 data does not arrive
+- MQTT broker ไม่ได้รัน
+- `MQTT_BROKER` ใน `esp32/config.py` ไม่ตรงกับ host ปัจจุบัน
+- backend `.env` ไม่ตรงกับ host ปัจจุบัน
 
-## 📊 MQTT Message Format
+### ESP32 online but commands do not reach the board
+- เช็ก topic command
+- เช็กว่า ESP32 subscribe สำเร็จ
+- เช็กว่า broker port `1883` reachable
 
-**ตัวอย่างข้อมูลที่ส่งมา (piggybank/data):**
-```json
-{
-  "coins": {"1": 5, "2": 3, "5": 2, "10": 1},
-  "total": 26,
-  "distance_cm": 8.5,
-  "is_full": false,
-  "is_locked": true,
-  "wifi_connected": true,
-  "estimated_total": 130,
-  "estimated_coin_count": 29,
-  "fill_percent": 57.5
-}
+### After changing networks, the system stops talking
+- รันใหม่:
+
+```bash
+python3 tools/set_host.py --auto
 ```
 
----
+- จากนั้น restart backend และ sync code ขึ้น ESP32 ใหม่
 
-## 🎯 ขั้นตอนต่อไป
-
-1. ✅ ตั้งค่า WiFi SSID/Password
-2. ✅ ติดตั้ง umqtt library บน ESP32
-3. ✅ อัพโหลด code ไป ESP32
-4. ✅ รัน `npm run dev` ใน React
-5. ⏳รอให้ Status เปลี่ยนเป็น "Connected"
-6. 🎉 ดูข้อมูลไหลเข้ามา!
-
----
-
-## 📞 ประิ่ศนธารณ์
-
-**ยังไงะหงใจเลือกใช้ HiveMQ Cloud:**
-- ไม่ต้องตั้งค่า server เอง
-- ไม่ต้องให้ server รันตลอด
-- เชื่อมต่อจากไหนได้เพราะผ่าน Internet
-
-**ถ้าต้องใช้ Local Mosquitto:**
-- ติดต่อมาแล้ว ขอเปลี่ยนคำแนะนำ
-
----
-
-✅ **Ready to go!** 🚀
