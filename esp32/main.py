@@ -61,6 +61,7 @@ RFID_RECOVERY_IDLE_MS = 4000
 # Keep scan mode under frontend control. Set to 0 to disable device-side auto-timeout.
 RFID_ENROLL_TIMEOUT_MS = 0
 DISPLAY_INTERVAL_MS = 500
+DISPLAY_RECOVERY_RETRY_MS = 5000
 ULTRASONIC_INTERVAL_MS = 800
 DEFAULT_DASHBOARD_UPDATE_MS = 5000
 WIFI_RECONNECT_INTERVAL_MS = 5000
@@ -72,6 +73,8 @@ BIN_FULL_DISTANCE_CM = 4.9
 BIN_MAX_COINS_EST = 400
 AVG_COIN_VALUE_EST = 4.5
 ULTRASONIC_EMA_ALPHA = 0.25
+
+_last_display_recover_ms = 0
 
 # Indicators.
 LED_PIN = 18
@@ -91,33 +94,77 @@ def deny_beep(buzzer):
         time.sleep_ms(120)
 
 
-def safe_show_boot_screen(oled, ip_text=None):
+def _recover_display():
+    global _last_display_recover_ms
+
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _last_display_recover_ms) < DISPLAY_RECOVERY_RETRY_MS:
+        return None
+
+    _last_display_recover_ms = now
     try:
-        show_boot_screen(oled, ip_text=ip_text)
-    except TypeError:
-        show_boot_screen(oled)
+        recovered = init_display()
+        if recovered is not None:
+            print("[DISPLAY] recovered")
+        return recovered
+    except Exception as exc:
+        print("[DISPLAY RECOVERY FAILED]:", exc)
+        return None
+
+
+def _safe_render(oled, renderer, context):
+    try:
+        if oled is not None:
+            renderer(oled)
+            return oled
+    except Exception as exc:
+        print(f"[DISPLAY ERROR:{context}] {exc}")
+
+    recovered = _recover_display()
+    if recovered is None:
+        return None
+
+    try:
+        renderer(recovered)
+        return recovered
+    except Exception as exc:
+        print(f"[DISPLAY ERROR:{context}:recovered] {exc}")
+        return None
+
+
+def safe_show_boot_screen(oled, ip_text=None):
+    def _render(target):
+        try:
+            show_boot_screen(target, ip_text=ip_text)
+        except TypeError:
+            show_boot_screen(target)
+
+    return _safe_render(oled, _render, "boot")
 
 
 def safe_render_status(oled, counts, total, is_full, estimated_total=None, fill_percent=None, ip_text=None):
-    try:
-        render_status(
-            oled,
-            counts,
-            total,
-            is_full,
-            estimated_total=estimated_total,
-            fill_percent=fill_percent,
-            ip_text=ip_text,
-        )
-    except TypeError:
-        render_status(
-            oled,
-            counts,
-            total,
-            is_full,
-            estimated_total=estimated_total,
-            fill_percent=fill_percent,
-        )
+    def _render(target):
+        try:
+            render_status(
+                target,
+                counts,
+                total,
+                is_full,
+                estimated_total=estimated_total,
+                fill_percent=fill_percent,
+                ip_text=ip_text,
+            )
+        except TypeError:
+            render_status(
+                target,
+                counts,
+                total,
+                is_full,
+                estimated_total=estimated_total,
+                fill_percent=fill_percent,
+            )
+
+    return _safe_render(oled, _render, "status")
 
 
 def run():
@@ -164,7 +211,7 @@ def run():
         return current_payload()
 
 
-    safe_show_boot_screen(oled, ip_text=device_ip)
+    oled = safe_show_boot_screen(oled, ip_text=device_ip)
 
     sensor = None
     distance_cm = None
@@ -185,7 +232,7 @@ def run():
         wlan = connect_wifi(WIFI_SSID, WIFI_PASSWORD)
         device_ip = ip_address(wlan)
         print("WiFi connected:", is_connected(wlan), "IP:", device_ip)
-        safe_show_boot_screen(oled, ip_text=device_ip)
+        oled = safe_show_boot_screen(oled, ip_text=device_ip)
         # start server
         _thread.start_new_thread(start_server, (get_status,))
         server_started = True
@@ -284,7 +331,7 @@ def run():
     last_mqtt_recover_ms = 0
 
     print("System Ready")
-    safe_render_status(oled, coins.snapshot(), coins.total(), full_flag, ip_text=device_ip)
+    oled = safe_render_status(oled, coins.snapshot(), coins.total(), full_flag, ip_text=device_ip)
     
 
 
@@ -447,7 +494,7 @@ def run():
 
         if time.ticks_diff(now, last_display_ms) >= DISPLAY_INTERVAL_MS:
             last_display_ms = now
-            safe_render_status(
+            oled = safe_render_status(
                 oled,
                 coins.snapshot(),
                 coins.total(),
