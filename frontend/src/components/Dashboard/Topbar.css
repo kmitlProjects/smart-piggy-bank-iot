@@ -63,6 +63,11 @@
   color: #ba1a1a;
 }
 
+.topbar-status.is-syncing {
+  background: rgba(71, 85, 105, 0.12);
+  color: #475569;
+}
+
 .topbar-dot {
   width: 8px;
   height: 8px;
@@ -76,6 +81,10 @@
 
 .topbar-status.is-offline .topbar-dot {
   background: #ba1a1a;
+}
+
+.topbar-status.is-syncing .topbar-dot {
+  background: #64748b;
 }
 
 .topbar-meta {
@@ -111,6 +120,12 @@
 .topbar-icon-chip.is-offline {
   background: rgba(186, 26, 26, 0.12);
   color: #ba1a1a;
+}
+
+.topbar-icon-chip.is-syncing,
+.topbar-icon-chip.is-neutral {
+  background: rgba(71, 85, 105, 0.12);
+  color: #475569;
 }
 
 .topbar-icon-chip.is-locked {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../Dashboard/Sidebar';
 import Topbar from '../Dashboard/Topbar';
 import { COIN_COLORS } from '../../utils/coinColors';
+import { readCachedDeviceStatus, writeCachedDeviceStatus } from '../../utils/deviceStatusCache';
 import './Statistics.css';
 
 const COIN_ORDER = [10, 5, 2, 1];
@@ -174,6 +175,7 @@ function DistributionChart({ distribution }) {
 }
 
 export default function Statistics({ onNavigate }) {
+  const [cachedDevice, setCachedDevice] = useState(() => readCachedDeviceStatus());
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -187,6 +189,10 @@ export default function Statistics({ onNavigate }) {
       }
 
       const payload = await response.json();
+      const nextCachedDevice = writeCachedDeviceStatus(payload.device || {});
+      if (nextCachedDevice) {
+        setCachedDevice(nextCachedDevice);
+      }
       setStats(payload);
       setError('');
     } catch (fetchError) {
@@ -218,7 +224,7 @@ export default function Statistics({ onNavigate }) {
   const summary = stats?.summary ?? {};
   const distribution = stats?.coin_distribution ?? { counts: {}, values: {}, total_count: 0 };
   const insights = stats?.insights ?? {};
-  const device = stats?.device ?? {};
+  const device = stats?.device ?? cachedDevice ?? {};
   const meta = stats?.meta ?? {};
   const lineSeries = stats?.savings_growth?.[range] ?? [];
   const mostFrequentCoinValue = summary?.most_frequent_coin?.value ?? null;
@@ -230,7 +236,8 @@ export default function Statistics({ onNavigate }) {
   const mostFrequentCoinText = mostFrequentCoinValue ? `฿${mostFrequentCoinValue}` : 'N/A';
   const statsReady = Boolean(stats);
   const hasCoinData = Boolean(meta?.has_coin_data);
-  const locked = device.is_locked === undefined ? true : Boolean(device.is_locked);
+  const locked = device.is_locked === undefined ? undefined : Boolean(device.is_locked);
+  const wifi = device.wifi_connected === undefined ? undefined : Boolean(device.wifi_connected);
 
   const balanceHighlights = useMemo(() => ([
     {
@@ -251,7 +258,7 @@ export default function Statistics({ onNavigate }) {
     <div className="statistics-shell">
       <Sidebar active="statistics" onNavigate={onNavigate} />
       <main className="statistics-main">
-        <Topbar wifi={Boolean(device.wifi_connected)} locked={locked} lastSeenAt={device.last_seen_at} />
+        <Topbar wifi={wifi} locked={locked} lastSeenAt={device.last_seen_at} />
         <div className="statistics-content">
           {error && (
             <div className="statistics-alert" role="alert">

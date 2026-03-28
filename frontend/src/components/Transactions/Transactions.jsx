@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from '../Dashboard/Sidebar';
 import Topbar from '../Dashboard/Topbar';
 import { COIN_COLORS } from '../../utils/coinColors';
+import { readCachedDeviceStatus, writeCachedDeviceStatus } from '../../utils/deviceStatusCache';
 import './Transactions.css';
 
 const COIN_FILTERS = ['all', '10', '5', '2', '1'];
@@ -149,6 +150,7 @@ function matchesTypeFilter(transaction, typeFilter) {
 
 export default function Transactions({ onNavigate }) {
   const initialViewRef = useRef(readTransactionsViewFromLocation());
+  const [cachedDevice, setCachedDevice] = useState(() => readCachedDeviceStatus());
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -165,6 +167,10 @@ export default function Transactions({ onNavigate }) {
       }
 
       const nextPayload = await response.json();
+      const nextCachedDevice = writeCachedDeviceStatus(nextPayload.device || {});
+      if (nextCachedDevice) {
+        setCachedDevice(nextCachedDevice);
+      }
       setPayload(nextPayload);
       setError('');
     } catch (fetchError) {
@@ -207,10 +213,11 @@ export default function Transactions({ onNavigate }) {
   }, []);
 
   const hero = payload?.hero ?? {};
-  const device = payload?.device ?? {};
+  const device = payload?.device ?? cachedDevice ?? {};
   const transactions = payload?.transactions ?? [];
   const meta = payload?.meta ?? {};
-  const locked = device.is_locked === undefined ? true : Boolean(device.is_locked);
+  const locked = device.is_locked === undefined ? undefined : Boolean(device.is_locked);
+  const wifi = device.wifi_connected === undefined ? undefined : Boolean(device.wifi_connected);
 
   const filteredTransactions = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -311,7 +318,7 @@ export default function Transactions({ onNavigate }) {
     <div className="transactions-shell">
       <Sidebar active="transactions" onNavigate={onNavigate} />
       <main className="transactions-main">
-        <Topbar wifi={Boolean(device.wifi_connected)} locked={locked} lastSeenAt={device.last_seen_at} />
+        <Topbar wifi={wifi} locked={locked} lastSeenAt={device.last_seen_at} />
         <div className="transactions-content">
           {error && (
             <div className="transactions-alert" role="alert">

@@ -6,6 +6,7 @@ import {
   readRefreshIntervalSec,
   writeRefreshIntervalSec,
 } from '../../utils/dashboardRefresh';
+import { readCachedDeviceStatus, writeCachedDeviceStatus } from '../../utils/deviceStatusCache';
 
 const REFRESH_APPLY_DELAY_MS = 320;
 
@@ -58,6 +59,7 @@ async function fetchJson(path, options = {}) {
 }
 
 const Settings = ({ onNavigate }) => {
+  const [cachedDevice, setCachedDevice] = useState(() => readCachedDeviceStatus());
   const [device, setDevice] = useState({
     wifiSsid: 'Unknown',
     backendContainerIp: '127.0.0.1',
@@ -118,6 +120,14 @@ const Settings = ({ onNavigate }) => {
       const browserAccess = browserAccessInfo();
       const dashboardHost = deviceRes.dashboard_host || browserAccess.host || '';
       const dashboardUrl = deviceRes.dashboard_url || browserAccess.url || '';
+      const nextCachedDevice = writeCachedDeviceStatus({
+        ...(statusRes.status || {}),
+        last_seen_at: deviceRes.last_seen_at || statusRes.status?.last_seen_at || null,
+        connection_status: deviceRes.connection_status || statusRes.status?.connection_status || null,
+      });
+      if (nextCachedDevice) {
+        setCachedDevice(nextCachedDevice);
+      }
 
       setDevice({
         wifiSsid: deviceRes.wifi_ssid || 'Unknown',
@@ -404,7 +414,13 @@ const Settings = ({ onNavigate }) => {
   };
 
   const isConnected = device.connectionStatus === 'CONNECTED';
+  const topbarWifi = device.connectionStatus === 'CONNECTED'
+    ? true
+    : device.connectionStatus === 'DISCONNECTED'
+      ? false
+      : (cachedDevice?.wifi_connected === undefined ? undefined : Boolean(cachedDevice.wifi_connected));
   const locked = !isUnlocked;
+  const topbarLocked = cachedDevice?.is_locked === undefined ? locked : Boolean(cachedDevice.is_locked);
   const scanStatusText = enrollment.last_scanned_at
     ? `Last scanned: ${formatTimestamp(enrollment.last_scanned_at)}`
     : 'No card scanned in scan mode yet.';
@@ -414,7 +430,7 @@ const Settings = ({ onNavigate }) => {
       <Sidebar active="settings" onNavigate={onNavigate} />
 
       <main className="settings-page">
-        <Topbar wifi={isConnected} locked={locked} lastSeenAt={device.lastSeenAt} />
+        <Topbar wifi={topbarWifi} locked={topbarLocked} lastSeenAt={device.lastSeenAt || cachedDevice?.last_seen_at} />
 
         <div className="settings-content">
           <header className="settings-header">
