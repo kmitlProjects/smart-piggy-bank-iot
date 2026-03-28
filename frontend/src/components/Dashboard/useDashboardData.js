@@ -6,6 +6,7 @@ import {
   clampRefreshIntervalSec,
   readRefreshIntervalSec,
 } from '../../utils/dashboardRefresh';
+import { writeCachedDeviceStatus } from '../../utils/deviceStatusCache';
 
 function getPollIntervalMs(value = readRefreshIntervalSec()) {
   return clampRefreshIntervalSec(value) * 1000;
@@ -82,6 +83,8 @@ export default function useDashboardData() {
       if (!mountedRef.current) {
         return;
       }
+
+      writeCachedDeviceStatus(statusRes.status || {});
 
       setData((prev) => ({
         ...prev,

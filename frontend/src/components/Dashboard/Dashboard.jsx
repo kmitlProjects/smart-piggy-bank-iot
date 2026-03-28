@@ -8,6 +8,7 @@ import useDashboardData from './useDashboardData';
 import { COIN_COLORS } from '../../utils/coinColors';
 import SecurityStatus from './SecurityStatus';
 import Banner from './Banner';
+import { readCachedDeviceStatus } from '../../utils/deviceStatusCache';
 import './Dashboard.css';
 
 function clampPercent(value) {
@@ -32,6 +33,8 @@ const Dashboard = ({ onNavigate }) => {
   } = useDashboardData();
 
   const safeStatus = status || {};
+  const cachedDevice = readCachedDeviceStatus() || {};
+  const topbarStatus = status || cachedDevice;
   const safeCoins = coins || {};
   const totalSavings = Number(safeCoins.total ?? safeStatus.total ?? 0);
   const coinArr = [1, 2, 5, 10].map((value) => {
@@ -44,6 +47,12 @@ const Dashboard = ({ onNavigate }) => {
       color: COIN_COLORS[value],
     };
   });
+  const topbarLocked = topbarStatus?.is_locked === undefined || topbarStatus?.is_locked === null
+    ? undefined
+    : Boolean(topbarStatus.is_locked);
+  const topbarWifi = topbarStatus?.wifi_connected === undefined || topbarStatus?.wifi_connected === null
+    ? undefined
+    : Boolean(topbarStatus.wifi_connected);
   const locked = safeStatus.is_locked === undefined || safeStatus.is_locked === null
     ? true
     : Boolean(safeStatus.is_locked);
@@ -57,7 +66,7 @@ const Dashboard = ({ onNavigate }) => {
     <div className="dashboard-root">
       <Sidebar active="dashboard" onNavigate={onNavigate} />
       <main className="dashboard-main">
-        <Topbar wifi={wifi} locked={locked} lastSeenAt={safeStatus.last_seen_at} />
+        <Topbar wifi={topbarWifi} locked={topbarLocked} lastSeenAt={topbarStatus?.last_seen_at} />
         <div className="dashboard-content">
           {error && (
             <div className="dashboard-alert" role="alert">
