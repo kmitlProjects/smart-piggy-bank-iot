@@ -371,7 +371,7 @@ export default function Transactions({ onNavigate }) {
                     </div>
                     <div>
                       <span className="transactions-card-label">Peak Deposit Time</span>
-                      <strong>{hero.peak_deposit_time || '--:--'}</strong>
+                      <strong>{hero.peak_deposit_time || 'N/A'}</strong>
                     </div>
                   </article>
                 </div>
