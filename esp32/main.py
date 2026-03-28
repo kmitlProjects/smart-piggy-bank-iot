@@ -24,7 +24,7 @@ except ImportError:
             return True
         except Exception:
             return False
-from wifi import connect_wifi, is_connected, ip_address
+from wifi import connect_wifi, reconnect_wifi, is_connected, ip_address
 from mqtt_handler import MQTTHandler
 from webserver import start_server
 from config import (
@@ -63,6 +63,9 @@ RFID_ENROLL_TIMEOUT_MS = 0
 DISPLAY_INTERVAL_MS = 500
 ULTRASONIC_INTERVAL_MS = 800
 DEFAULT_DASHBOARD_UPDATE_MS = 5000
+WIFI_RECONNECT_INTERVAL_MS = 5000
+WIFI_RECONNECT_TIMEOUT_S = 8
+MQTT_RECOVERY_CHECK_MS = 1500
 COIN_NOISE_GUARD_MS = 300
 BIN_EMPTY_DISTANCE_CM = 17.5
 BIN_FULL_DISTANCE_CM = 4.9
@@ -131,6 +134,8 @@ def run():
     enroll_mode = False
     enroll_started_ms = None
     dashboard_update_ms = DEFAULT_DASHBOARD_UPDATE_MS
+    wifi_was_connected = False
+    server_started = False
 
     # ===== WEB STATUS FUNCTION =====
     def current_payload(heartbeat_reason="HEARTBEAT", rfid_scan_uid=None, rfid_scan_source=None):
@@ -183,6 +188,7 @@ def run():
         safe_show_boot_screen(oled, ip_text=device_ip)
         # start server
         _thread.start_new_thread(start_server, (get_status,))
+        server_started = True
     else:
         print("WiFi: skipped (set WIFI_SSID/WIFI_PASSWORD in main.py)")
 
@@ -274,6 +280,8 @@ def run():
     last_display_ms = 0
     last_ultrasonic_ms = 0
     last_mqtt_publish_ms = 0
+    last_wifi_retry_ms = 0
+    last_mqtt_recover_ms = 0
 
     print("System Ready")
     safe_render_status(oled, coins.snapshot(), coins.total(), full_flag, ip_text=device_ip)
@@ -282,6 +290,35 @@ def run():
 
     while True:
         now = time.ticks_ms()
+        wifi_status = is_connected(wlan)
+
+        if WIFI_SSID and WIFI_PASSWORD and not wifi_status:
+            mqtt.mark_disconnected("wifi offline")
+            device_ip = None
+            if time.ticks_diff(now, last_wifi_retry_ms) >= WIFI_RECONNECT_INTERVAL_MS:
+                last_wifi_retry_ms = now
+                print("[WIFI] reconnect attempt")
+                wlan = reconnect_wifi(wlan, WIFI_SSID, WIFI_PASSWORD, timeout_s=WIFI_RECONNECT_TIMEOUT_S)
+                wifi_status = is_connected(wlan)
+                device_ip = ip_address(wlan)
+                print("[WIFI] connected:", wifi_status, "IP:", device_ip)
+                if wifi_status and not server_started:
+                    _thread.start_new_thread(start_server, (get_status,))
+                    server_started = True
+                    print("[WEB] status server started after reconnect")
+
+        if wifi_status and not wifi_was_connected:
+            print("[WIFI] link restored")
+            if mqtt.ensure_connected(force=True):
+                mqtt.publish(current_payload(heartbeat_reason="WIFI_RECONNECTED"))
+
+        if wifi_status and time.ticks_diff(now, last_mqtt_recover_ms) >= MQTT_RECOVERY_CHECK_MS:
+            last_mqtt_recover_ms = now
+            if not mqtt.connected:
+                if mqtt.ensure_connected():
+                    mqtt.publish(current_payload(heartbeat_reason="MQTT_RECONNECTED"))
+
+        wifi_was_connected = wifi_status
 
         if time.ticks_diff(now, last_rfid_ms) >= RFID_POLL_INTERVAL_MS:
             last_rfid_ms = now
@@ -309,8 +346,6 @@ def run():
                         continue
 
                     # RFID card detected - authorize first, then unlock only if allowed.
-                    wifi_status = is_connected(wlan)
-
                     auth_result = {
                         "authorized": False,
                         "access_granted": False,
