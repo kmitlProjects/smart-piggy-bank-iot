@@ -5,6 +5,13 @@ import { COIN_COLORS } from '../../utils/coinColors';
 import './Transactions.css';
 
 const COIN_FILTERS = ['all', '10', '5', '2', '1'];
+const TYPE_FILTERS = [
+  { id: 'all', label: 'All Activity' },
+  { id: 'deposit', label: 'Deposits' },
+  { id: 'access', label: 'Access' },
+  { id: 'security', label: 'Security' },
+  { id: 'system', label: 'System' },
+];
 const ROWS_PER_PAGE = 10;
 
 function readTransactionsViewFromLocation() {
@@ -12,22 +19,25 @@ function readTransactionsViewFromLocation() {
     return {
       search: '',
       coinFilter: 'all',
+      typeFilter: 'all',
       page: 1,
     };
   }
 
   const params = new URLSearchParams(window.location.search);
   const coinFilter = params.get('coin') || 'all';
+  const typeFilter = params.get('type') || 'all';
   const parsedPage = Number.parseInt(params.get('page') || '1', 10);
 
   return {
     search: params.get('q') || '',
     coinFilter: COIN_FILTERS.includes(coinFilter) ? coinFilter : 'all',
+    typeFilter: TYPE_FILTERS.some((item) => item.id === typeFilter) ? typeFilter : 'all',
     page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
   };
 }
 
-function writeTransactionsViewToLocation({ search, coinFilter, page }) {
+function writeTransactionsViewToLocation({ search, coinFilter, typeFilter, page }) {
   if (typeof window === 'undefined') {
     return;
   }
@@ -45,6 +55,12 @@ function writeTransactionsViewToLocation({ search, coinFilter, page }) {
     params.set('coin', coinFilter);
   } else {
     params.delete('coin');
+  }
+
+  if (typeFilter && typeFilter !== 'all') {
+    params.set('type', typeFilter);
+  } else {
+    params.delete('type');
   }
 
   if (page > 1) {
@@ -84,6 +100,14 @@ function getEventBadgeLabel(transaction) {
     return 'RFID';
   }
 
+  if ((transaction.action || '').toLowerCase().includes('enroll mode')) {
+    return 'SCAN';
+  }
+
+  if (transaction.action_code === 'security') {
+    return 'CARD';
+  }
+
   if (transaction.action_code === 'web_unlock') {
     return 'WEB';
   }
@@ -99,6 +123,30 @@ function paginate(totalItems, currentPage, pageSize) {
   return { totalPages, safePage, start, end };
 }
 
+function matchesTypeFilter(transaction, typeFilter) {
+  if (typeFilter === 'all') {
+    return true;
+  }
+
+  if (typeFilter === 'deposit') {
+    return transaction.entry_type === 'deposit';
+  }
+
+  if (typeFilter === 'access') {
+    return transaction.entry_type === 'access' || transaction.action_code === 'unlock';
+  }
+
+  if (typeFilter === 'security') {
+    return transaction.action_code === 'security';
+  }
+
+  if (typeFilter === 'system') {
+    return transaction.entry_type === 'activity' && transaction.action_code === 'system';
+  }
+
+  return true;
+}
+
 export default function Transactions({ onNavigate }) {
   const initialViewRef = useRef(readTransactionsViewFromLocation());
   const [payload, setPayload] = useState(null);
@@ -106,6 +154,7 @@ export default function Transactions({ onNavigate }) {
   const [error, setError] = useState('');
   const [search, setSearch] = useState(initialViewRef.current.search);
   const [coinFilter, setCoinFilter] = useState(initialViewRef.current.coinFilter);
+  const [typeFilter, setTypeFilter] = useState(initialViewRef.current.typeFilter);
   const [page, setPage] = useState(initialViewRef.current.page);
 
   const loadTransactions = useCallback(async () => {
@@ -149,6 +198,7 @@ export default function Transactions({ onNavigate }) {
       const nextView = readTransactionsViewFromLocation();
       setSearch(nextView.search);
       setCoinFilter(nextView.coinFilter);
+      setTypeFilter(nextView.typeFilter);
       setPage(nextView.page);
     };
 
@@ -166,7 +216,13 @@ export default function Transactions({ onNavigate }) {
     const keyword = search.trim().toLowerCase();
 
     return transactions.filter((transaction) => {
-      const matchesCoin = coinFilter === 'all' || String(transaction.coin_value) === coinFilter;
+      const matchesType = matchesTypeFilter(transaction, typeFilter);
+      if (!matchesType) {
+        return false;
+      }
+
+      const shouldApplyCoinFilter = typeFilter === 'all' || typeFilter === 'deposit';
+      const matchesCoin = !shouldApplyCoinFilter || coinFilter === 'all' || String(transaction.coin_value) === coinFilter;
       if (!matchesCoin) {
         return false;
       }
@@ -191,7 +247,7 @@ export default function Transactions({ onNavigate }) {
 
       return haystack.includes(keyword);
     });
-  }, [transactions, search, coinFilter]);
+  }, [transactions, search, coinFilter, typeFilter]);
 
   const pagination = paginate(filteredTransactions.length, page, ROWS_PER_PAGE);
   const pageRows = filteredTransactions.slice(pagination.start, pagination.end);
@@ -206,9 +262,10 @@ export default function Transactions({ onNavigate }) {
     writeTransactionsViewToLocation({
       search,
       coinFilter,
+      typeFilter,
       page,
     });
-  }, [search, coinFilter, page]);
+  }, [search, coinFilter, typeFilter, page]);
 
   const handleExport = () => {
     const rows = filteredTransactions.map((transaction) => ({
@@ -338,20 +395,38 @@ export default function Transactions({ onNavigate }) {
                   </div>
                 </div>
 
-                <div className="transactions-filter-row">
-                  {COIN_FILTERS.map((filterValue) => (
-                    <button
-                      key={filterValue}
-                      type="button"
-                      className={`transactions-filter-btn${coinFilter === filterValue ? ' active' : ''}`}
-                      onClick={() => {
-                        setCoinFilter(filterValue);
-                        setPage(1);
-                      }}
-                    >
-                      {filterValue === 'all' ? 'All Coins' : `฿${filterValue}`}
-                    </button>
-                  ))}
+                <div className="transactions-filter-groups">
+                  <div className="transactions-filter-row">
+                    {TYPE_FILTERS.map((filterValue) => (
+                      <button
+                        key={filterValue.id}
+                        type="button"
+                        className={`transactions-filter-btn${typeFilter === filterValue.id ? ' active' : ''}`}
+                        onClick={() => {
+                          setTypeFilter(filterValue.id);
+                          setPage(1);
+                        }}
+                      >
+                        {filterValue.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="transactions-filter-row transactions-filter-row-secondary">
+                    {COIN_FILTERS.map((filterValue) => (
+                      <button
+                        key={filterValue}
+                        type="button"
+                        className={`transactions-filter-btn${coinFilter === filterValue ? ' active' : ''}`}
+                        onClick={() => {
+                          setCoinFilter(filterValue);
+                          setPage(1);
+                        }}
+                      >
+                        {filterValue === 'all' ? 'All Coins' : `฿${filterValue}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="transactions-table-wrap">

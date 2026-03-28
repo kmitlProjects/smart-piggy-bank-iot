@@ -269,11 +269,21 @@
   height: 18px;
 }
 
+.transactions-filter-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 28px 20px;
+}
+
 .transactions-filter-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 0 28px 20px;
+}
+
+.transactions-filter-row-secondary {
+  padding-top: 2px;
 }
 
 .transactions-filter-btn {
@@ -455,6 +465,11 @@
 .transactions-action-pill.is-system {
   background: rgba(217, 119, 6, 0.14);
   color: #b45309;
+}
+
+.transactions-action-pill.is-security {
+  background: rgba(127, 64, 37, 0.12);
+  color: #9a3412;
 }
 
 .transactions-action-detail {
