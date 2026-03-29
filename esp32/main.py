@@ -64,10 +64,11 @@ DISPLAY_INTERVAL_MS = 500
 DISPLAY_RECOVERY_RETRY_MS = 5000
 ULTRASONIC_INTERVAL_MS = 800
 DEFAULT_DASHBOARD_UPDATE_MS = 5000
-WIFI_RECONNECT_INTERVAL_MS = 5000
+WIFI_RECONNECT_INTERVAL_MS = 15000
 WIFI_RECONNECT_TIMEOUT_S = 8
 MQTT_RECOVERY_CHECK_MS = 1500
 COIN_NOISE_GUARD_MS = 1200
+COIN_ACTIVITY_RECONNECT_GRACE_MS = 2500
 COMMAND_HISTORY_LIMIT = 24
 BIN_EMPTY_DISTANCE_CM = 17.5
 BIN_FULL_DISTANCE_CM = 4.9
@@ -176,9 +177,7 @@ def run():
     is_locked = True
 
     coins = CoinCounter(
-        debounce_ms=160,
-        min_pulse_ms=8,
-        max_pulse_ms=1200,
+        debounce_ms=120,
         startup_ignore_ms=2000,
     )
     reader = init_rfid()
@@ -375,33 +374,38 @@ def run():
         now = time.ticks_ms()
         wifi_status = is_connected(wlan)
 
+        coin_busy = coins.recent_signal(COIN_ACTIVITY_RECONNECT_GRACE_MS)
+
         if WIFI_SSID and WIFI_PASSWORD and not wifi_status:
             mqtt.mark_disconnected("wifi offline")
             device_ip = None
             if time.ticks_diff(now, last_wifi_retry_ms) >= WIFI_RECONNECT_INTERVAL_MS:
-                last_wifi_retry_ms = now
-                print("[WIFI] reconnect attempt")
-                wlan = reconnect_wifi(
-                    wlan,
-                    WIFI_SSID,
-                    WIFI_PASSWORD,
-                    timeout_s=WIFI_RECONNECT_TIMEOUT_S,
-                    blocking=False,
-                )
-                wifi_status = is_connected(wlan)
-                device_ip = ip_address(wlan)
-                print("[WIFI] connected:", wifi_status, "IP:", device_ip)
-                if wifi_status and not server_started:
-                    _thread.start_new_thread(start_server, (get_status,))
-                    server_started = True
-                    print("[WEB] status server started after reconnect")
+                if coin_busy:
+                    pass
+                else:
+                    last_wifi_retry_ms = now
+                    print("[WIFI] reconnect attempt")
+                    wlan = reconnect_wifi(
+                        wlan,
+                        WIFI_SSID,
+                        WIFI_PASSWORD,
+                        timeout_s=WIFI_RECONNECT_TIMEOUT_S,
+                        blocking=False,
+                    )
+                    wifi_status = is_connected(wlan)
+                    device_ip = ip_address(wlan)
+                    print("[WIFI] connected:", wifi_status, "IP:", device_ip)
+                    if wifi_status and not server_started:
+                        _thread.start_new_thread(start_server, (get_status,))
+                        server_started = True
+                        print("[WEB] status server started after reconnect")
 
-        if wifi_status and not wifi_was_connected:
+        if wifi_status and not wifi_was_connected and not coin_busy:
             print("[WIFI] link restored")
             if mqtt.ensure_connected(force=True):
                 mqtt.publish(current_payload(heartbeat_reason="WIFI_RECONNECTED"))
 
-        if wifi_status and time.ticks_diff(now, last_mqtt_recover_ms) >= MQTT_RECOVERY_CHECK_MS:
+        if wifi_status and not coin_busy and time.ticks_diff(now, last_mqtt_recover_ms) >= MQTT_RECOVERY_CHECK_MS:
             last_mqtt_recover_ms = now
             if not mqtt.connected:
                 if mqtt.ensure_connected():
