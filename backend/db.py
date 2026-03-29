@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS rfid_scan_events (
     source TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pending_reset_commands (
+    command_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    completed_at TEXT,
+    details TEXT
+);
 """
 
 
@@ -951,6 +961,92 @@ def get_activity_history(limit: int = 100) -> List[Dict[str, Any]]:
             (limit,),
         ).fetchall()
         return [_to_dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_pending_reset(command_id: str, device_id: str = "esp32") -> Dict[str, Any]:
+    now = _now_iso()
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO pending_reset_commands (
+                command_id, device_id, status, requested_at, acknowledged_at, completed_at, details
+            ) VALUES (?, ?, 'PENDING', ?, NULL, NULL, NULL)
+            ON CONFLICT(command_id) DO UPDATE SET
+                device_id = excluded.device_id,
+                status = 'PENDING',
+                requested_at = excluded.requested_at,
+                acknowledged_at = NULL,
+                completed_at = NULL,
+                details = NULL
+            """,
+            (command_id, device_id, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            """
+            SELECT command_id, device_id, status, requested_at, acknowledged_at, completed_at, details
+            FROM pending_reset_commands
+            WHERE command_id = ?
+            """,
+            (command_id,),
+        ).fetchone()
+        return _to_dict(row) if row else {}
+    finally:
+        conn.close()
+
+
+def cancel_pending_reset(command_id: str) -> bool:
+    conn = _conn()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM pending_reset_commands WHERE command_id = ? AND status = 'PENDING'",
+            (command_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def acknowledge_pending_reset(command_id: Optional[str], device_id: str = "esp32") -> bool:
+    if not command_id:
+        return False
+
+    conn = _conn()
+    try:
+        cursor = conn.execute(
+            """
+            UPDATE pending_reset_commands
+            SET status = 'ACKNOWLEDGED', acknowledged_at = ?
+            WHERE command_id = ? AND device_id = ? AND status = 'PENDING'
+            """,
+            (_now_iso(), command_id, device_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def complete_pending_reset(command_id: Optional[str], details: Optional[str] = None) -> bool:
+    if not command_id:
+        return False
+
+    conn = _conn()
+    try:
+        cursor = conn.execute(
+            """
+            UPDATE pending_reset_commands
+            SET status = 'COMPLETED', completed_at = ?, details = ?
+            WHERE command_id = ? AND status IN ('PENDING', 'ACKNOWLEDGED')
+            """,
+            (_now_iso(), details, command_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
