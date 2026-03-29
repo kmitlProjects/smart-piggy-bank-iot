@@ -33,11 +33,14 @@ def _publish_command(payload: dict, retries: int = 3, delay_s: float = 0.2) -> t
     return False, command_id
 
 
-def publish_reset_command(device_id: str = "esp32") -> tuple[bool, str]:
-    return _publish_command({
+def publish_reset_command(device_id: str = "esp32", command_id: str | None = None) -> tuple[bool, str]:
+    payload = {
         "action": "reset_data",
         "device_id": device_id,
-    })
+    }
+    if command_id:
+        payload["command_id"] = command_id
+    return _publish_command(payload)
 
 
 def publish_unlock_command(device_id: str = "esp32", duration_ms: int = 5000) -> tuple[bool, str]:

@@ -4,6 +4,7 @@ import os
 import socket
 import threading
 import time
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from config import (
@@ -17,8 +18,10 @@ from config import (
 )
 from db import (
     add_rfid_card,
+    cancel_pending_reset,
     check_access,
     clear_pending_rfid_scan,
+    create_pending_reset,
     deactivate_rfid_card_by_id,
     get_activity_history,
     get_access_history,
@@ -911,16 +914,18 @@ def create_app() -> Flask:
     def reset():
         payload = request.get_json(silent=True) or {}
         device_id = payload.get("device_id", "esp32")
-        sent, command_id = publish_reset_command(device_id=device_id)
+        command_id = uuid4().hex
+        create_pending_reset(command_id, device_id=device_id)
+        sent, command_id = publish_reset_command(device_id=device_id, command_id=command_id)
         if not sent:
+            cancel_pending_reset(command_id)
             return jsonify({
                 "error": "failed to send reset command to device",
                 "instance": _instance_info(),
             }), 503
 
-        result = reset_database(clear_cards=False)
         return jsonify({
-            "reset": result,
+            "reset": "pending_ack",
             "command_sent": True,
             "command_id": command_id,
             "device_id": device_id,

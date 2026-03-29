@@ -5,10 +5,13 @@ import paho.mqtt.client as mqtt
 
 from config import MQTT_BROKER, MQTT_CLIENT_ID, MQTT_PORT, MQTT_TOPIC_DATA
 from db import (
+    acknowledge_pending_reset,
+    complete_pending_reset,
     insert_coin_event,
     log_activity_event,
     mark_device_seen,
     record_rfid_scan,
+    reset_database,
     upsert_device_runtime,
     upsert_latest_status,
 )
@@ -54,6 +57,34 @@ class MQTTIngestService:
                 )
                 duplicate_command_response = bool(command_id) and not inserted
             elif heartbeat_reason == "RESET":
+                reset_consumed = acknowledge_pending_reset(command_id, device_id="esp32")
+                if reset_consumed:
+                    reset_result = reset_database(clear_cards=False)
+                    log_activity_event(
+                        event_type="system",
+                        action="RESET_DATA",
+                        status="APPLIED",
+                        source="device",
+                        command_id=command_id,
+                        reason="RESET",
+                        details="Coin counter reset was applied on the ESP32 device and backend history was cleared after device acknowledgment.",
+                    )
+                    if any(key in payload for key in ("coins", "total", "distance_cm", "is_locked", "fill_percent")):
+                        insert_coin_event(payload, source="mqtt", device_id="esp32")
+                        upsert_latest_status(payload, device_id="esp32")
+                    mark_device_seen(device_id="esp32", reason=heartbeat_reason or "HEARTBEAT")
+                    complete_pending_reset(
+                        command_id,
+                        details=(
+                            "Reset acknowledged by device. "
+                            f"Cleared coin_events={reset_result['coin_events']}, "
+                            f"access_logs={reset_result['access_logs']}, "
+                            f"activity_events={reset_result['activity_events']}."
+                        ),
+                    )
+                    print("MQTT reset acknowledged and backend history cleared")
+                    return
+
                 inserted = log_activity_event(
                     event_type="system",
                     action="RESET_DATA",
