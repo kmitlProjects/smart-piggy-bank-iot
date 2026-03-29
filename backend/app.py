@@ -4,11 +4,13 @@ import os
 import socket
 import threading
 import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from config import (
     API_HOST,
     API_PORT,
     CONNECTIVITY_TIMEOUT_SEC,
+    DISPLAY_TIMEZONE,
     FRONTEND_PORT,
     PUBLIC_DASHBOARD_HOST,
     PUBLIC_DASHBOARD_PORT,
@@ -53,6 +55,13 @@ ALLOWED_ORIGINS = {
     f"http://localhost:{FRONTEND_PORT}",
 }
 COIN_DENOMINATIONS = (1, 2, 5, 10)
+try:
+    APP_DISPLAY_TZ = ZoneInfo(DISPLAY_TIMEZONE)
+except ZoneInfoNotFoundError:
+    if DISPLAY_TIMEZONE == "Asia/Bangkok":
+        APP_DISPLAY_TZ = timezone(timedelta(hours=7), name="Asia/Bangkok")
+    else:
+        APP_DISPLAY_TZ = timezone.utc
 
 
 def _instance_info() -> dict:
@@ -124,6 +133,14 @@ def _parse_iso_datetime(value) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except Exception:
         return None
+
+
+def _to_display_datetime(value) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    else:
+        parsed = _parse_iso_datetime(value) or datetime.now(timezone.utc)
+    return parsed.astimezone(APP_DISPLAY_TZ)
 
 
 def _coin_counts_from_row(row: dict) -> dict[int, int]:
@@ -261,7 +278,7 @@ def _collect_timeseries_context() -> dict:
 
 
 def _format_activity_timestamp(created_at: str | None) -> tuple[str, str, str]:
-    timestamp = _parse_iso_datetime(created_at) or datetime.now(timezone.utc)
+    timestamp = _to_display_datetime(created_at)
     return (
         timestamp.strftime("%b %d, %Y"),
         timestamp.strftime("%H:%M:%S"),
@@ -349,6 +366,7 @@ def _build_transaction_rows(derived_events: list[dict]) -> list[dict]:
             if count <= 0:
                 continue
 
+            local_timestamp = _to_display_datetime(timestamp)
             seeded = bool(event.get("seeded"))
             status, status_code = _status_meta("seeded" if seeded else "verified")
             action, action_code = _action_meta("baseline_snapshot" if seeded else "coin_deposit")
@@ -356,9 +374,9 @@ def _build_transaction_rows(derived_events: list[dict]) -> list[dict]:
                 "id": f"deposit-{row_id}",
                 "entry_type": "deposit",
                 "created_at": event["created_at"],
-                "date_label": timestamp.strftime("%b %d, %Y"),
-                "time_label": timestamp.strftime("%H:%M:%S"),
-                "hour_label": timestamp.strftime("%H:%M"),
+                "date_label": local_timestamp.strftime("%b %d, %Y"),
+                "time_label": local_timestamp.strftime("%H:%M:%S"),
+                "hour_label": local_timestamp.strftime("%H:%M"),
                 "coin_value": denomination,
                 "coin_label": f"{denomination} Baht Coin",
                 "count": count,
@@ -476,7 +494,7 @@ def _derive_peak_deposit_time(derived_events: list[dict]) -> str | None:
 
     buckets: dict[str, int] = {}
     for event in derived_events:
-        label = event["timestamp"].strftime("%H:%M")
+        label = _to_display_datetime(event["timestamp"]).strftime("%H:%M")
         buckets[label] = buckets.get(label, 0) + 1
 
     return max(buckets.items(), key=lambda item: (item[1], item[0]))[0]
