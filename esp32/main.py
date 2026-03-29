@@ -381,7 +381,13 @@ def run():
             if time.ticks_diff(now, last_wifi_retry_ms) >= WIFI_RECONNECT_INTERVAL_MS:
                 last_wifi_retry_ms = now
                 print("[WIFI] reconnect attempt")
-                wlan = reconnect_wifi(wlan, WIFI_SSID, WIFI_PASSWORD, timeout_s=WIFI_RECONNECT_TIMEOUT_S)
+                wlan = reconnect_wifi(
+                    wlan,
+                    WIFI_SSID,
+                    WIFI_PASSWORD,
+                    timeout_s=WIFI_RECONNECT_TIMEOUT_S,
+                    blocking=False,
+                )
                 wifi_status = is_connected(wlan)
                 device_ip = ip_address(wlan)
                 print("[WIFI] connected:", wifi_status, "IP:", device_ip)
@@ -471,7 +477,8 @@ def run():
                         print("[RFID] recovered after error")
                     last_rfid_recover_ms = now
 
-        mqtt.check_message()
+        if wifi_status:
+            mqtt.check_message()
 
         if RFID_ENROLL_TIMEOUT_MS > 0 and enroll_mode and enroll_started_ms is not None:
             if time.ticks_diff(now, enroll_started_ms) >= RFID_ENROLL_TIMEOUT_MS:
@@ -545,7 +552,7 @@ def run():
             device_ip = ip_address(wlan)
 
         # Publish to MQTT using the current dashboard update interval.
-        if time.ticks_diff(now, last_mqtt_publish_ms) >= dashboard_update_ms:
+        if wifi_status and time.ticks_diff(now, last_mqtt_publish_ms) >= dashboard_update_ms:
             last_mqtt_publish_ms = now
             payload = current_payload(heartbeat_reason="PERIODIC")
             sent = mqtt.publish(payload)
