@@ -67,7 +67,7 @@ DEFAULT_DASHBOARD_UPDATE_MS = 5000
 WIFI_RECONNECT_INTERVAL_MS = 5000
 WIFI_RECONNECT_TIMEOUT_S = 8
 MQTT_RECOVERY_CHECK_MS = 1500
-COIN_NOISE_GUARD_MS = 300
+COIN_NOISE_GUARD_MS = 1200
 COMMAND_HISTORY_LIMIT = 24
 BIN_EMPTY_DISTANCE_CM = 17.5
 BIN_FULL_DISTANCE_CM = 4.9
@@ -175,7 +175,12 @@ def run():
     lock = init_lock()  # GPIO35 relay, active-low unlock via lock.py
     is_locked = True
 
-    coins = CoinCounter()
+    coins = CoinCounter(
+        debounce_ms=160,
+        min_pulse_ms=8,
+        max_pulse_ms=1200,
+        startup_ignore_ms=2000,
+    )
     reader = init_rfid()
     oled = init_display()
     device_ip = None
