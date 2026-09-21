@@ -423,3 +423,15 @@ ESP32 เก็บยอดเหรียญสะสมในไฟล์ loca
 - ตรวจสอบว่า WebREPL เปิดอยู่
 - ตรวจสอบ password และ IP ของบอร์ด
 - ลองใช้ `./tools/sync_up.sh auto <password> <preferred-ip>`
+
+## การตั้งค่า Wi-Fi (ESP32)
+
+repo นี้ไม่ได้เก็บรหัส Wi-Fi ไว้ ก่อนอัปโหลดโค้ดขึ้นบอร์ดให้สร้างไฟล์รหัสเอง:
+
+```bash
+cp esp32/wifi_secrets.example.py esp32/wifi_secrets.py
+```
+
+แล้วแก้ `WIFI_SSID` และ `WIFI_PASSWORD` ใน `esp32/wifi_secrets.py`
+ไฟล์นี้อยู่ใน `.gitignore` จึงจะไม่ถูก commit
+ถ้าไม่มีไฟล์นี้ ESP32 จะข้ามการเชื่อมต่อ Wi-Fi (MQTT และ WebREPL จะใช้งานไม่ได้)
