@@ -6,9 +6,13 @@ or
   python tools/set_host.py <host-or-ip>
 """
 
-# WiFi credentials
-WIFI_SSID = "YOUR_WIFI_NAME"
-WIFI_PASSWORD = "YOUR_PASSWORD"
+# WiFi credentials: kept in esp32/wifi_secrets.py (git-ignored).
+# Copy esp32/wifi_secrets.example.py to esp32/wifi_secrets.py and fill in.
+try:
+    from wifi_secrets import WIFI_SSID, WIFI_PASSWORD
+except ImportError:
+    WIFI_SSID = ""
+    WIFI_PASSWORD = ""
 
 # MQTT config (local-first)
 MQTT_BROKER = "Chanwits-MacBook-Pro.local"

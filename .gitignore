@@ -14,3 +14,6 @@ backend/data/*.db-shm
 
 # WebREPL upload cache
 tools/.webrepl_last_host
+
+# Wi-Fi credentials (ESP32)
+esp32/wifi_secrets.py
